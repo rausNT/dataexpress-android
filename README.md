@@ -1,54 +1,53 @@
 # DataExpress Android
 
-Экспериментальный Android-клиент для запуска настольного DataExpress в локальном Wine/Box64-окружении на ARM64-планшетах.
+Специализированная Android-сборка на основе Winlator для запуска настольного DataExpress на ARM64-планшетах.
 
-## Статус
+## Текущее направление
 
-Проект находится на стадии технического прототипа. Текущий APK-каркас:
-
-- выбирает базу `.DXDB`, `.FDB` или `.EPAS` через системный Android File Picker;
-- сохраняет выданный Android доступ к выбранному файлу;
-- показывает сведения об устройстве и готовности runtime;
-- отделяет Android-оболочку от Wine, Box64, DataExpress и Firebird runtime;
-- не содержит и не распространяет сторонние бинарники.
-
-Следующий рубеж — подключить воспроизводимый ARM64 runtime и проверить запуск `DataExpress.exe` на реальном планшете.
-
-## Предполагаемая архитектура
+Проект больше не разрабатывает собственный Wine/Box64 launcher с нуля. За основу берётся открытый `brunodev85/winlator-app` под LGPL-2.1, фиксируется конкретный upstream commit и поверх него применяются воспроизводимые DataExpress-патчи и профиль контейнера.
 
 ```text
-Android launcher
-  ├─ Storage Access Framework
-  ├─ runtime manifest and integrity checks
-  ├─ X11/graphics session
-  ├─ Box64
-  ├─ Wine x86_64
-  └─ DataExpress.exe + Firebird client
+Winlator app source (pinned commit)
+  + DataExpress Android patches
+  + DataExpress container profile
+  + DataExpress.exe built from dxbit/dataexpress
+  + Firebird client and required notices
+  = DataExpress Android APK
 ```
 
-Winlator рассматривается как технический ориентир для организации контейнера, запуска Wine/Box64 и вывода Windows-интерфейса, но проект не является переименованной сборкой Winlator.
+## Что уже сделано
 
-## Сборка оболочки
+- upstream Winlator закреплён в `upstream/winlator-app.lock`;
+- `scripts/prepare-winlator-fork.sh` клонирует ровно закреплённый commit и применяет наши патчи;
+- CI формирует архив исходников производной сборки вместе с уведомлениями LGPL;
+- добавлен начальный профиль DataExpress: 1280×800, WineD3D/VirGL, автозапуск `C:\\DataExpress\\dataexpress.exe`;
+- DataExpress планируется собирать из официального `dxbit/dataexpress` под Apache-2.0;
+- `PadegUC.dll` и другие неподтверждённые проприетарные файлы исключаются.
 
-Требования:
+## Почему не GitHub Fork
 
-- Android Studio;
-- JDK 17;
-- Android SDK 35;
-- Gradle 8.9 либо совместимый Gradle wrapper.
+Этот репозиторий уже был создан отдельно. Поэтому используется модель **upstream + patch overlay**: она технически эквивалентна поддерживаемому форку, но позволяет хранить наши изменения отдельно и регулярно переносить их на проверенные версии Winlator. Подготовленный полный исходный код производной сборки публикуется как CI artifact.
 
-Откройте каталог проекта в Android Studio и соберите конфигурацию `app`. После добавления Gradle wrapper сборка из консоли выполняется командой:
+## Подготовка исходников форка
 
 ```bash
-./gradlew assembleDebug
+bash scripts/prepare-winlator-fork.sh
 ```
 
-APK появится в `app/build/outputs/apk/debug/`.
+Результат появится в `build/winlator-src`. Если upstream изменился так, что патч больше не применим, сборка должна завершиться ошибкой, а не выпустить обычный Winlator без изменений.
 
-## Правовой статус
+## Ближайший технический рубеж
 
-Репозиторий содержит только собственную Android-оболочку, конфигурацию и документацию. Wine, Box64, Winlator, Firebird и DataExpress имеют собственные лицензии и правообладателей. Их бинарники нельзя добавлять в релиз автоматически без отдельной проверки лицензии, уведомлений и права распространения.
+1. Добавить патч первого запуска, создающий единственный контейнер DataExpress.
+2. Заменить общий домашний экран Winlator на запуск/выбор базы DataExpress.
+3. Встроить проверенный payload DataExpress и Firebird client.
+4. Собрать debug APK в GitHub Actions.
+5. Проверить на Huawei MatePad: запуск, русский ввод, мышь, доступ к `.DXDB` и сохранение данных.
 
-Каталог DataExpress при передаче должен сохраняться как стороннее ПО «как есть», вместе с относящимися к нему лицензиями и NOTICE-файлами. Проект не заявляет передачу исключительных прав на DataExpress или Firebird.
+## Лицензии
 
-Подробности: [docs/licensing.md](docs/licensing.md).
+- Winlator / winlator-app: LGPL-2.1; сохраняются исходники, лицензия, attribution и список изменений.
+- DataExpress: Apache-2.0; сохраняются `LICENSE.txt` и `NOTICE.txt`.
+- Wine, Box64, Mesa, Firebird и другие компоненты: применяются их собственные лицензии и уведомления.
+
+См. [NOTICE-WINLATOR.md](NOTICE-WINLATOR.md) и [docs/licensing.md](docs/licensing.md).
