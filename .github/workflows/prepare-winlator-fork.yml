@@ -1,0 +1,41 @@
+name: Prepare Winlator-derived source
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'upstream/winlator-app.lock'
+      - 'scripts/prepare-winlator-fork.sh'
+      - 'patches/winlator/**'
+      - 'overlay/**'
+      - 'NOTICE-WINLATOR.md'
+      - '.github/workflows/prepare-winlator-fork.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare pinned Winlator source
+        run: bash scripts/prepare-winlator-fork.sh "$RUNNER_TEMP/winlator-src"
+
+      - name: Verify upstream license and overlay
+        run: |
+          test -f "$RUNNER_TEMP/winlator-src/LICENSE"
+          grep -qi 'lesser general public license' "$RUNNER_TEMP/winlator-src/LICENSE"
+          test -f "$RUNNER_TEMP/winlator-src/dataexpress-overlay/dataexpress-profile.json"
+          test -f "$RUNNER_TEMP/winlator-src/NOTICE-DATAEXPRESS.md"
+
+      - name: Archive prepared source
+        run: |
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/dataexpress-winlator-source.tar.gz" winlator-src
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dataexpress-winlator-source
+          path: ${{ runner.temp }}/dataexpress-winlator-source.tar.gz
+          retention-days: 14
