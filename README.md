@@ -32,10 +32,12 @@ Winlator рассматривается как технический ориен
 
 Требования:
 
-- Android Studio с JDK 17;
-- Android SDK 36;
-- Gradle wrapper 9.4.1;
-- Android Gradle Plugin 9.2.0.
+- Android Studio;
+- JDK 17;
+- Android SDK 35;
+- Gradle 8.9 либо совместимый Gradle wrapper.
+
+Откройте каталог проекта в Android Studio и соберите конфигурацию `app`. После добавления Gradle wrapper сборка из консоли выполняется командой:
 
 ```bash
 ./gradlew assembleDebug
