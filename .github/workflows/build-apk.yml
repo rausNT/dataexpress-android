@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'cmake;3.22.1'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'cmake;3.22.1'
 
       - name: Apply DataExpress overlay
         shell: bash
