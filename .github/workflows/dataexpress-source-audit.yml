@@ -1,0 +1,71 @@
+name: DataExpress source audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataexpress_ref:
+        description: dxbit/dataexpress commit, tag or branch
+        required: true
+        default: main
+      dependencies_ref:
+        description: dxbit/dataexpress-depend commit, tag or branch
+        required: true
+        default: main
+  pull_request:
+    paths:
+      - scripts/verify-runtime-payload.py
+      - docs/licensing.md
+      - docs/build-dataexpress.md
+      - .github/workflows/dataexpress-source-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Android project
+        uses: actions/checkout@v4
+
+      - name: Checkout DataExpress
+        uses: actions/checkout@v4
+        with:
+          repository: dxbit/dataexpress
+          ref: ${{ inputs.dataexpress_ref || 'main' }}
+          path: upstream/dataexpress
+
+      - name: Checkout DataExpress dependencies
+        uses: actions/checkout@v4
+        with:
+          repository: dxbit/dataexpress-depend
+          ref: ${{ inputs.dependencies_ref || 'main' }}
+          path: upstream/dataexpress-depend
+
+      - name: Verify mandatory licensing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s upstream/dataexpress/LICENSE.txt
+          test -s upstream/dataexpress/NOTICE.txt
+          grep -q "Apache License" upstream/dataexpress/LICENSE.txt
+          grep -qi "PadegUC.dll" upstream/dataexpress/NOTICE.txt
+
+      - name: Record exact upstream revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/audit
+          {
+            echo "dataexpress=$(git -C upstream/dataexpress rev-parse HEAD)"
+            echo "dataexpress-depend=$(git -C upstream/dataexpress-depend rev-parse HEAD)"
+          } | tee build/audit/upstream-revisions.txt
+          cp upstream/dataexpress/LICENSE.txt build/audit/DataExpress-LICENSE.txt
+          cp upstream/dataexpress/NOTICE.txt build/audit/DataExpress-NOTICE.txt
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dataexpress-source-audit
+          path: build/audit
+          if-no-files-found: error
