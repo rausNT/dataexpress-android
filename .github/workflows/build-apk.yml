@@ -33,6 +33,12 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Install Android CMake 3.22.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'cmake;3.22.1'
+
       - name: Apply DataExpress overlay
         shell: bash
         run: |
