@@ -162,6 +162,11 @@ jobs:
           unzip -l "$APK" | grep -F 'assets/dataexpress/payload.zip'
           unzip -l "$APK" | grep -F 'assets/dataexpress/manifest.json'
           unzip -l "$APK" | grep -F 'assets/dataexpress/demo-database.zip'
+          unzip -p "$APK" 'lib/arm64-v8a/libzstd-jni-1.5.7-12.so' > /tmp/libzstd-jni.so
+          readelf -l /tmp/libzstd-jni.so | awk '
+            / LOAD / { found=1; if ($NF != "0x4000") exit 1 }
+            END { if (!found) exit 1 }
+          '
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt

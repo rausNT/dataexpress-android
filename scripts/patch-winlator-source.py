@@ -52,8 +52,14 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         build_file,
         'versionName "11.1"',
-        'versionName "0.1.0-winlator-11.1"',
+        'versionName "0.1.1-winlator-11.1"',
         "Android version name patch",
+    )
+    replace_once(
+        build_file,
+        "implementation 'com.github.luben:zstd-jni:1.5.2-3@aar'",
+        "implementation 'com.github.luben:zstd-jni:1.5.7-12@aar'",
+        "16 KiB-compatible zstd-jni patch",
     )
 
     strings_files = sorted((root / "app/src/main/res").glob("values*/strings.xml"))
@@ -100,6 +106,26 @@ def patch_android_application(root: Path) -> None:
         "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {",
         "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {",
         "document picker result guard",
+    )
+
+    rootfs_installer = root / "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java"
+    replace_once(
+        rootfs_installer,
+        "import com.winlator.MainActivity;",
+        "import com.winlator.MainActivity;\nimport com.winlator.DataExpressBootstrap;",
+        "RootFS diagnostics import",
+    )
+    replace_once(
+        rootfs_installer,
+        "Executors.newSingleThreadExecutor().execute(() -> {\n            clearRootDir(rootDir);",
+        "Executors.newSingleThreadExecutor().execute(() -> {\n            try {\n                clearRootDir(rootDir);",
+        "RootFS extraction guard start",
+    )
+    replace_once(
+        rootfs_installer,
+        "            dialog.closeOnUiThread();\n        });\n    }\n\n    public static void installIfNeeded",
+        "            dialog.closeOnUiThread();\n            }\n            catch (Throwable error) {\n                dialog.closeOnUiThread();\n                DataExpressBootstrap.reportBackgroundFailure(activity, \"Не удалось распаковать среду Winlator\", error);\n            }\n        });\n    }\n\n    public static void installIfNeeded",
+        "RootFS extraction guard end",
     )
 
     xserver = root / "app/src/main/java/com/winlator/XServerDisplayActivity.java"

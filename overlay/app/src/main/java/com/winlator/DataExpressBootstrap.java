@@ -48,6 +48,11 @@ public final class DataExpressBootstrap {
     private DataExpressBootstrap() {}
 
     public static void initialize(MainActivity activity) {
+        DataExpressDiagnostics.initialize(activity, () -> beginInitialization(activity));
+    }
+
+    private static void beginInitialization(MainActivity activity) {
+        DataExpressDiagnostics.record(activity, "rootfs.prepare", null, null);
         RootFSInstaller.installIfNeeded(activity);
         waitForRootFs(activity, System.currentTimeMillis());
     }
@@ -55,10 +60,12 @@ public final class DataExpressBootstrap {
     private static void waitForRootFs(MainActivity activity, long startedAt) {
         RootFS rootFS = RootFS.find(activity);
         if (rootFS.isValid() && rootFS.getVersion() >= RootFSInstaller.LATEST_VERSION) {
+            DataExpressDiagnostics.record(activity, "rootfs.ready", "version=" + rootFS.getVersion(), null);
             prepare(activity);
             return;
         }
         if (System.currentTimeMillis() - startedAt >= INSTALL_TIMEOUT_MS) {
+            DataExpressDiagnostics.record(activity, "rootfs.timeout", null, null);
             Toast.makeText(activity, "Не удалось подготовить среду DataExpress.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -125,6 +132,8 @@ public final class DataExpressBootstrap {
     }
 
     private static void stageAndLaunch(MainActivity activity, Container container, Uri sourceUri) {
+        DataExpressDiagnostics.record(activity, "database.stage.start",
+            sourceUri == null ? "embedded-demo" : "external:" + shortHash(sourceUri.toString()), null);
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
                 File applicationDir = new File(container.getRootDir(), ".wine/drive_c/DataExpress");
@@ -144,6 +153,8 @@ public final class DataExpressBootstrap {
                 }
 
                 if (!database.isFile()) throw new IOException("Database was not staged: " + database);
+                DataExpressDiagnostics.record(activity, "database.stage.ready",
+                    "size=" + database.length(), null);
                 showLaunchReport(activity, container, applicationDir, database, sourceUri);
             }
             catch (Exception error) {
@@ -217,6 +228,8 @@ public final class DataExpressBootstrap {
     private static void launch(MainActivity activity, Container container, File applicationDir,
                                File database, Uri sourceUri) throws IOException {
         final String dosDatabase = toDataExpressDosPath(applicationDir, database);
+        DataExpressDiagnostics.record(activity, "wine.launch", "database=" + shortHash(dosDatabase), null);
+        DataExpressDiagnostics.flush(activity);
         activity.runOnUiThread(() -> {
             Intent intent = new Intent(activity, XServerDisplayActivity.class);
             intent.putExtra("container_id", container.id);
@@ -373,7 +386,13 @@ public final class DataExpressBootstrap {
         catch (Exception ignored) {}
     }
 
-    private static void showFailure(MainActivity activity, String prefix, Exception error) {
+    public static void reportBackgroundFailure(MainActivity activity, String prefix, Throwable error) {
+        showFailure(activity, prefix, error);
+    }
+
+    private static void showFailure(MainActivity activity, String prefix, Throwable error) {
+        DataExpressDiagnostics.record(activity, "bootstrap.failure", prefix, error);
+        DataExpressDiagnostics.flush(activity);
         activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
             .setTitle("DataExpress: запуск не выполнен")
             .setMessage(prefix + ":\n" + error.getMessage())

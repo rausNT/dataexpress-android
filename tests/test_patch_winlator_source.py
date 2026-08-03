@@ -43,7 +43,10 @@ class PatchWinlatorSourceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             files = {
-                "app/build.gradle": "applicationId 'com.winlator'\nversionName \"11.1\"\n",
+                "app/build.gradle": (
+                    "applicationId 'com.winlator'\nversionName \"11.1\"\n"
+                    "implementation 'com.github.luben:zstd-jni:1.5.2-3@aar'\n"
+                ),
                 "app/src/main/res/values/strings.xml": '<string name="app_name">Winlator</string>\n',
                 "app/src/main/res/values-ru/strings.xml": '<string name="app_name">Winlator</string>\n',
                 "app/src/main/java/com/winlator/MainActivity.java": (
@@ -77,6 +80,15 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                 }
             }
 """,
+                "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java": """import com.winlator.MainActivity;
+        Executors.newSingleThreadExecutor().execute(() -> {
+            clearRootDir(rootDir);
+            dialog.closeOnUiThread();
+        });
+    }
+
+    public static void installIfNeeded
+""",
                 "app/src/main/AndroidManifest.xml": """<application android:appCategory="game" android:isGame="true">
         <activity>
             <intent-filter>
@@ -96,12 +108,15 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("ru.mydataexpress.android", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("zstd-jni:1.5.7-12", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
             main = (root / "app/src/main/java/com/winlator/MainActivity.java").read_text(encoding="utf-8")
             self.assertEqual(main.count("DataExpressBootstrap.initialize(this);"), 2)
             self.assertNotIn("ActivityCompat.requestPermissions", main)
             self.assertIn("resultCode == Activity.RESULT_OK && data != null", main)
+            rootfs = (root / "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java").read_text(encoding="utf-8")
+            self.assertIn("catch (Throwable error)", rootfs)
             xserver = (root / "app/src/main/java/com/winlator/XServerDisplayActivity.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressBootstrap.finishAndSync(this);", xserver)
             self.assertIn('getStringExtra("exec_args")', xserver)
