@@ -49,28 +49,8 @@ jobs:
             cp -a overlay/. winlator/
           fi
 
-      - name: Patch pinned Winlator native build
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source = Path("winlator/app/src/main/cpp/gladiorenderer/src/arb_program.c")
-          text = source.read_text()
-          old = """                                if (IntArray_indexOf(&asmSource->genericAttribs, index) == -1) IntArray_add(&asmSource->genericAttribs, index);"""
-          new = """                                bool hasGenericAttrib = false;
-                                for (int attribIndex = 0; attribIndex < asmSource->genericAttribs.size; attribIndex++) {
-                                    if (asmSource->genericAttribs.values[attribIndex] == index) {
-                                        hasGenericAttrib = true;
-                                        break;
-                                    }
-                                }
-                                if (!hasGenericAttrib) IntArray_add(&asmSource->genericAttribs, index);"""
-          if old not in text:
-              raise SystemExit("Expected IntArray_indexOf call not found")
-          source.write_text(text.replace(old, new, 1))
-          PY
+      - name: Patch pinned Winlator source
+        run: python3 scripts/patch-winlator-source.py winlator
 
       - name: Make Gradle executable
         run: chmod +x winlator/gradlew

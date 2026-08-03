@@ -17,6 +17,8 @@ cp "$ROOT/NOTICE-WINLATOR.md" "$WORK/NOTICE-DATAEXPRESS.md"
 mkdir -p "$WORK/dataexpress-overlay"
 cp -R "$ROOT/overlay/." "$WORK/dataexpress-overlay/"
 
+python3 "$ROOT/scripts/patch-winlator-source.py" "$WORK"
+
 # Apply deterministic source patches. The script fails instead of silently
 # building an unmodified Winlator when upstream layout changes.
 for patch in "$ROOT"/patches/winlator/*.patch; do

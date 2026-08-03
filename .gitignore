@@ -1,0 +1,8 @@
+/build/
+/dist/
+/.gradle/
+/.idea/
+*.apk
+*.aab
+__pycache__/
+*.pyc
