@@ -1,0 +1,10 @@
+{
+  "name": "DataExpress",
+  "screenSize": "1280x800",
+  "graphicsDriver": "virgl",
+  "dxwrapper": "wined3d",
+  "audioDriver": "alsa",
+  "wincomponents": "direct3d=0,directsound=0,directmusic=0,directshow=0,directplay=0,xaudio=0,vcrun2005=0,vcrun2010=0,wmdecoder=0",
+  "startupSelection": 1,
+  "box64Preset": "compatibility"
+}

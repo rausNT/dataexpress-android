@@ -41,6 +41,128 @@ def patch_native_sources(root: Path) -> None:
     )
 
 
+def patch_android_application(root: Path) -> None:
+    build_file = root / "app/build.gradle"
+    replace_once(
+        build_file,
+        "applicationId 'com.winlator'",
+        "applicationId 'ru.mydataexpress.android'",
+        "Android application id patch",
+    )
+    replace_once(
+        build_file,
+        'versionName "11.1"',
+        'versionName "0.1.0-winlator-11.1"',
+        "Android version name patch",
+    )
+
+    strings_file = root / "app/src/main/res/values/strings.xml"
+    replace_once(
+        strings_file,
+        '<string name="app_name">Winlator</string>',
+        '<string name="app_name">DataExpress Android</string>',
+        "application name patch",
+    )
+
+    main_activity = root / "app/src/main/java/com/winlator/MainActivity.java"
+    main_text = main_activity.read_text(encoding="utf-8")
+    old_install = "RootFSInstaller.installIfNeeded(this);"
+    if main_text.count(old_install) != 2:
+        raise RuntimeError(f"Expected two RootFS installation calls in {main_activity}")
+    main_activity.write_text(
+        main_text.replace(old_install, "DataExpressBootstrap.initialize(this);"),
+        encoding="utf-8",
+    )
+    permissions_old = """    private boolean requestAppPermissions() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) return false;
+
+        String[] permissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE};
+        ActivityCompat.requestPermissions(this, permissions, PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);
+        return true;
+    }"""
+    permissions_new = """    private boolean requestAppPermissions() {
+        // DataExpress uses the Storage Access Framework and only receives access
+        // to a database explicitly selected by the user.
+        return false;
+    }"""
+    replace_once(main_activity, permissions_old, permissions_new, "scoped storage permission patch")
+
+    xserver = root / "app/src/main/java/com/winlator/XServerDisplayActivity.java"
+    exit_old = """    private void exit() {
+        winHandler.stop();
+        if (environment != null) environment.stopEnvironmentComponents();
+
+        Intent intent = getIntent();
+        if (intent.hasExtra(\"exec_path\")) {"""
+    exit_new = """    private void exit() {
+        winHandler.stop();
+        if (environment != null) environment.stopEnvironmentComponents();
+
+        Intent intent = getIntent();
+        if (intent.getBooleanExtra(\"dataexpress_mode\", false)) {
+            DataExpressBootstrap.finishAndSync(this);
+            return;
+        }
+        if (intent.hasExtra(\"exec_path\")) {"""
+    replace_once(xserver, exit_old, exit_new, "DataExpress exit synchronization patch")
+
+    args_old = """            if (intent.hasExtra(\"exec_path\")) {
+                execPath = WineUtils.unixToDOSPath(intent.getStringExtra(\"exec_path\"), container);
+
+                if (execPath.endsWith(\".lnk\")) {
+                    cmdArgs = \"\\\"\"+execPath+\"\\\"\";
+                    execPath = null;
+                }
+            }"""
+    args_new = """            if (intent.hasExtra(\"exec_path\")) {
+                execPath = WineUtils.unixToDOSPath(intent.getStringExtra(\"exec_path\"), container);
+                String explicitArgs = intent.getStringExtra(\"exec_args\");
+                if (explicitArgs != null && !explicitArgs.isEmpty()) execArgs = \" \"+explicitArgs;
+
+                if (execPath.endsWith(\".lnk\")) {
+                    cmdArgs = \"\\\"\"+execPath+\"\\\"\"+execArgs;
+                    execPath = null;
+                }
+            }"""
+    replace_once(xserver, args_old, args_new, "explicit executable arguments patch")
+
+    manifest = root / "app/src/main/AndroidManifest.xml"
+    manifest_text = manifest.read_text(encoding="utf-8")
+    manifest_text = manifest_text.replace('android:appCategory="game"', 'android:appCategory="productivity"', 1)
+    manifest_text = manifest_text.replace('android:isGame="true"', 'android:isGame="false"', 1)
+    manifest_text = manifest_text.replace(
+        'android:authorities="com.winlator.FileProvider"',
+        'android:authorities="${applicationId}.FileProvider"',
+        1,
+    )
+    launcher_filter = """            <intent-filter>
+                <action android:name=\"android.intent.action.MAIN\"/>
+                <category android:name=\"android.intent.category.LAUNCHER\"/>
+            </intent-filter>"""
+    database_filters = launcher_filter + """
+
+            <intent-filter>
+                <action android:name=\"android.intent.action.VIEW\"/>
+                <category android:name=\"android.intent.category.DEFAULT\"/>
+                <category android:name=\"android.intent.category.BROWSABLE\"/>
+                <data android:scheme=\"content\" android:mimeType=\"application/octet-stream\"/>
+                <data android:scheme=\"content\" android:mimeType=\"application/x-firebird\"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name=\"android.intent.action.VIEW\"/>
+                <category android:name=\"android.intent.category.DEFAULT\"/>
+                <category android:name=\"android.intent.category.BROWSABLE\"/>
+                <data android:scheme=\"file\" android:pathPattern=\".*\\\\.DXDB\"/>
+                <data android:scheme=\"file\" android:pathPattern=\".*\\\\.dxdb\"/>
+                <data android:scheme=\"file\" android:pathPattern=\".*\\\\.FDB\"/>
+                <data android:scheme=\"file\" android:pathPattern=\".*\\\\.fdb\"/>
+            </intent-filter>"""
+    if launcher_filter not in manifest_text:
+        raise RuntimeError(f"Launcher intent filter not found in {manifest}")
+    manifest.write_text(manifest_text.replace(launcher_filter, database_filters, 1), encoding="utf-8")
+
+
 def relocate_imported_jni_libraries(root: Path) -> list[str]:
     """Move CMake-imported libraries outside jniLibs to prevent AGP duplicates.
 
@@ -91,6 +213,7 @@ def main() -> int:
         raise SystemExit(f"Not a Winlator source tree: {root}")
 
     patch_native_sources(root)
+    patch_android_application(root)
     moved = relocate_imported_jni_libraries(root)
     print(f"Patched Winlator source: {root}")
     print(f"Relocated {len(moved)} CMake-imported JNI libraries")
