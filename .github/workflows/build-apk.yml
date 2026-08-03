@@ -163,13 +163,13 @@ jobs:
           unzip -l "$APK" | grep -F 'assets/dataexpress/manifest.json'
           unzip -l "$APK" | grep -F 'assets/dataexpress/demo-database.zip'
           unzip -p "$APK" 'lib/arm64-v8a/libzstd-jni-1.5.7-12.so' > /tmp/libzstd-jni.so
-          readelf -l /tmp/libzstd-jni.so | awk '
+          readelf -lW /tmp/libzstd-jni.so | awk '
             / LOAD / { found=1; if ($NF != "0x4000") exit 1 }
             END { if (!found) exit 1 }
           '
           for LIB in libwinlator.so libvirglrenderer.so libvortekrenderer.so libgladiorenderer.so; do
             unzip -p "$APK" "lib/arm64-v8a/$LIB" > "/tmp/$LIB"
-            readelf -l "/tmp/$LIB" | awk -v lib="$LIB" '
+            readelf -lW "/tmp/$LIB" | awk -v lib="$LIB" '
               / LOAD / { found=1; if ($NF != "0x4000") { print lib ": bad LOAD alignment " $NF; exit 1 } }
               END { if (!found) exit 1 }
             '
