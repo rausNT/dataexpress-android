@@ -97,11 +97,14 @@ jobs:
 
       - name: Download pinned official training database
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 \
-            --output build/runtime/DEMO_DB.DXDB.zip \
-            https://mydataexpress.ru/files/demodb/DEMO_DB.DXDB.zip
+          gh release download demo-assets-v1 \
+            --repo "${{ github.repository }}" \
+            --pattern DEMO_DB.DXDB.zip \
+            --dir build/runtime
           echo '9b75e4220beba697fa7c60f6c2d9fe913bf1e57491ce37557c1cb983152046f6  build/runtime/DEMO_DB.DXDB.zip' | sha256sum --check
 
       - name: Install Java 17
@@ -150,6 +153,20 @@ jobs:
           test -n "$APK"
           cp "$APK" dist/DataExpress-Android-debug.apk
           sha256sum dist/DataExpress-Android-debug.apk > dist/SHA256SUMS.txt
+
+      - name: Verify branded all-in-one APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=dist/DataExpress-Android-debug.apk
+          unzip -l "$APK" | grep -F 'assets/dataexpress/payload.zip'
+          unzip -l "$APK" | grep -F 'assets/dataexpress/manifest.json'
+          unzip -l "$APK" | grep -F 'assets/dataexpress/demo-database.zip'
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt
+          grep -Fq "package: name='ru.mydataexpress.android'" dist/APK-BADGING.txt
+          grep -Fq "application-label:'DataExpress'" dist/APK-BADGING.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

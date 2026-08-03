@@ -1,5 +1,6 @@
 package com.winlator;
 
+import android.app.AlertDialog;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -34,6 +35,7 @@ import java.util.zip.ZipInputStream;
 
 /** DataExpress-specific first-run, database import and launch orchestration. */
 public final class DataExpressBootstrap {
+    public static final String ACTION_OPEN_DATABASE = "ru.mydataexpress.android.action.OPEN_DATABASE";
     private static final String CONTAINER_NAME = "DataExpress";
     private static final String ASSET_PROFILE = "dataexpress/profile.json";
     private static final String ASSET_PAYLOAD = "dataexpress/payload.zip";
@@ -64,11 +66,32 @@ public final class DataExpressBootstrap {
     }
 
     private static void prepare(MainActivity activity) {
-        Uri sourceUri = Intent.ACTION_VIEW.equals(activity.getIntent().getAction())
-            ? activity.getIntent().getData() : null;
+        String action = activity.getIntent().getAction();
+        if (ACTION_OPEN_DATABASE.equals(action)) {
+            requestExternalDatabase(activity);
+            return;
+        }
+        Uri sourceUri = Intent.ACTION_VIEW.equals(action) ? activity.getIntent().getData() : null;
+        prepare(activity, sourceUri);
+    }
+
+    private static void requestExternalDatabase(MainActivity activity) {
+        activity.setOpenFileCallback(uri -> {
+            if (uri != null) prepare(activity, uri);
+        });
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("*/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        activity.startActivityForResult(picker, MainActivity.OPEN_FILE_REQUEST_CODE);
+    }
+
+    private static void prepare(MainActivity activity, Uri sourceUri) {
         if (sourceUri != null && !isDatabaseName(getDisplayName(activity, sourceUri))) {
             Toast.makeText(activity, "Выберите файл .DXDB или .FDB.", Toast.LENGTH_LONG).show();
-            sourceUri = null;
+            return;
         }
         if (sourceUri != null) takePersistablePermission(activity, sourceUri);
 
@@ -121,12 +144,57 @@ public final class DataExpressBootstrap {
                 }
 
                 if (!database.isFile()) throw new IOException("Database was not staged: " + database);
-                launch(activity, container, applicationDir, database, sourceUri);
+                showLaunchReport(activity, container, applicationDir, database, sourceUri);
             }
             catch (Exception error) {
                 showFailure(activity, "Не удалось подготовить базу", error);
             }
         });
+    }
+
+    private static void showLaunchReport(MainActivity activity, Container container,
+                                         File applicationDir, File database, Uri sourceUri) {
+        File executable = new File(applicationDir, "DataExpress.exe");
+        File firebirdEngine = new File(applicationDir, "fb5/plugins/engine13.dll");
+        String source = sourceUri == null ? "Встроенная учебная база" : "Выбранный файл Android / USB";
+        String report =
+            "База: " + database.getName() + "\n" +
+            "Источник: " + source + "\n" +
+            "Размер: " + formatSize(database.length()) + "\n\n" +
+            statusLine(executable.isFile(), "DataExpress Win32 подготовлен") + "\n" +
+            statusLine(firebirdEngine.isFile(), "Firebird Embedded подготовлен") + "\n" +
+            statusLine(database.isFile(), "Рабочая копия базы создана") + "\n" +
+            "◷ EPAS: запуск штатным движком DataExpress внутри Wine\n" +
+            "◷ DLL/COM и действия: результат будет известен после выполнения\n" +
+            (sourceUri == null
+                ? "ℹ Изменения останутся внутри приложения."
+                : "ℹ При штатном выходе изменения будут записаны обратно в выбранный файл.");
+
+        activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+            .setTitle("Проверка запуска DataExpress")
+            .setMessage(report)
+            .setNegativeButton("Отмена", (dialog, which) -> activity.finish())
+            .setPositiveButton("Запустить", (dialog, which) -> {
+                try {
+                    launch(activity, container, applicationDir, database, sourceUri);
+                }
+                catch (IOException error) {
+                    showFailure(activity, "Не удалось запустить базу", error);
+                }
+            })
+            .setCancelable(false)
+            .show());
+    }
+
+    private static String statusLine(boolean ready, String label) {
+        return (ready ? "✓ " : "✗ ") + label;
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " Б";
+        double kib = bytes / 1024.0;
+        if (kib < 1024) return String.format(Locale.ROOT, "%.1f КиБ", kib);
+        return String.format(Locale.ROOT, "%.1f МиБ", kib / 1024.0);
     }
 
     private static void installPayloadIfNeeded(Context context, File applicationDir) throws Exception {
@@ -306,7 +374,10 @@ public final class DataExpressBootstrap {
     }
 
     private static void showFailure(MainActivity activity, String prefix, Exception error) {
-        activity.runOnUiThread(() -> Toast.makeText(activity,
-            prefix + ": " + error.getMessage(), Toast.LENGTH_LONG).show());
+        activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+            .setTitle("DataExpress: запуск не выполнен")
+            .setMessage(prefix + ":\n" + error.getMessage())
+            .setPositiveButton("Закрыть", null)
+            .show());
     }
 }

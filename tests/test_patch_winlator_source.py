@@ -55,6 +55,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                     "        ActivityCompat.requestPermissions(this, permissions, PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);\n"
                     "        return true;\n"
                     "    }\n"
+                    "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {\n"
                 ),
                 "app/src/main/java/com/winlator/XServerDisplayActivity.java": """    private void exit() {
         winHandler.stop();
@@ -97,11 +98,13 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             main = (root / "app/src/main/java/com/winlator/MainActivity.java").read_text(encoding="utf-8")
             self.assertEqual(main.count("DataExpressBootstrap.initialize(this);"), 2)
             self.assertNotIn("ActivityCompat.requestPermissions", main)
+            self.assertIn("resultCode == Activity.RESULT_OK && data != null", main)
             xserver = (root / "app/src/main/java/com/winlator/XServerDisplayActivity.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressBootstrap.finishAndSync(this);", xserver)
             self.assertIn('getStringExtra("exec_args")', xserver)
             manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
             self.assertIn("android.intent.action.VIEW", manifest)
+            self.assertIn("@xml/dataexpress_shortcuts", manifest)
             self.assertIn("${applicationId}.FileProvider", manifest)
 
 

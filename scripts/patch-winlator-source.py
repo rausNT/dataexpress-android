@@ -87,6 +87,12 @@ def patch_android_application(root: Path) -> None:
         return false;
     }"""
     replace_once(main_activity, permissions_old, permissions_new, "scoped storage permission patch")
+    replace_once(
+        main_activity,
+        "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {",
+        "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {",
+        "document picker result guard",
+    )
 
     xserver = root / "app/src/main/java/com/winlator/XServerDisplayActivity.java"
     exit_old = """    private void exit() {
@@ -157,7 +163,11 @@ def patch_android_application(root: Path) -> None:
                 <data android:scheme=\"file\" android:pathPattern=\".*\\\\.dxdb\"/>
                 <data android:scheme=\"file\" android:pathPattern=\".*\\\\.FDB\"/>
                 <data android:scheme=\"file\" android:pathPattern=\".*\\\\.fdb\"/>
-            </intent-filter>"""
+            </intent-filter>
+
+            <meta-data
+                android:name=\"android.app.shortcuts\"
+                android:resource=\"@xml/dataexpress_shortcuts\"/>"""
     if launcher_filter not in manifest_text:
         raise RuntimeError(f"Launcher intent filter not found in {manifest}")
     manifest.write_text(manifest_text.replace(launcher_filter, database_filters, 1), encoding="utf-8")

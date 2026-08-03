@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dataexpress_open_database">Открыть базу с USB</string>
+    <string name="dataexpress_open_database_disabled">Открытие внешней базы недоступно</string>
+</resources>
