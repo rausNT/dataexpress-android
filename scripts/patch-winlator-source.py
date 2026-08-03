@@ -56,13 +56,21 @@ def patch_android_application(root: Path) -> None:
         "Android version name patch",
     )
 
-    strings_file = root / "app/src/main/res/values/strings.xml"
-    replace_once(
-        strings_file,
-        '<string name="app_name">Winlator</string>',
-        '<string name="app_name">DataExpress Android</string>',
-        "application name patch",
-    )
+    strings_files = sorted((root / "app/src/main/res").glob("values*/strings.xml"))
+    patched_names = 0
+    for strings_file in strings_files:
+        strings_text = strings_file.read_text(encoding="utf-8")
+        updated, count = re.subn(
+            r'(<string\s+name="app_name"[^>]*>).*?(</string>)',
+            r'\1DataExpress Android\2',
+            strings_text,
+            count=1,
+        )
+        if count:
+            strings_file.write_text(updated, encoding="utf-8")
+            patched_names += 1
+    if patched_names == 0:
+        raise RuntimeError("application name patch: no app_name resources found")
 
     main_activity = root / "app/src/main/java/com/winlator/MainActivity.java"
     main_text = main_activity.read_text(encoding="utf-8")

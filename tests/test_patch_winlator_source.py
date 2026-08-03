@@ -45,6 +45,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             files = {
                 "app/build.gradle": "applicationId 'com.winlator'\nversionName \"11.1\"\n",
                 "app/src/main/res/values/strings.xml": '<string name="app_name">Winlator</string>\n',
+                "app/src/main/res/values-ru/strings.xml": '<string name="app_name">Winlator</string>\n',
                 "app/src/main/java/com/winlator/MainActivity.java": (
                     "if (!requestAppPermissions()) RootFSInstaller.installIfNeeded(this);\n"
                     "RootFSInstaller.installIfNeeded(this);\n"
@@ -95,6 +96,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("ru.mydataexpress.android", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
+            self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
             main = (root / "app/src/main/java/com/winlator/MainActivity.java").read_text(encoding="utf-8")
             self.assertEqual(main.count("DataExpressBootstrap.initialize(this);"), 2)
             self.assertNotIn("ActivityCompat.requestPermissions", main)
