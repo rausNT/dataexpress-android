@@ -167,6 +167,13 @@ jobs:
             / LOAD / { found=1; if ($NF != "0x4000") exit 1 }
             END { if (!found) exit 1 }
           '
+          for LIB in libwinlator.so libvirglrenderer.so libvortekrenderer.so libgladiorenderer.so; do
+            unzip -p "$APK" "lib/arm64-v8a/$LIB" > "/tmp/$LIB"
+            readelf -l "/tmp/$LIB" | awk -v lib="$LIB" '
+              / LOAD / { found=1; if ($NF != "0x4000") { print lib ": bad LOAD alignment " $NF; exit 1 } }
+              END { if (!found) exit 1 }
+            '
+          done
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt

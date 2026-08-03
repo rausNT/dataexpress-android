@@ -33,6 +33,21 @@ def replace_once(path: Path, old: str, new: str, description: str) -> None:
 
 
 def patch_native_sources(root: Path) -> None:
+    cmake = root / "app/src/main/cpp/CMakeLists.txt"
+    cmake_text = cmake.read_text(encoding="utf-8")
+    page_size_flags = (
+        '# DataExpress: Android 15+ devices may use 16 KiB memory pages.\n'
+        'add_link_options("-Wl,-z,max-page-size=16384")\n'
+    )
+    anchor = "cmake_minimum_required(VERSION 3.22.1)\n"
+    if page_size_flags not in cmake_text:
+        if anchor not in cmake_text:
+            raise RuntimeError(f"16 KiB linker patch: CMake anchor not found in {cmake}")
+        cmake.write_text(
+            cmake_text.replace(anchor, anchor + "\n" + page_size_flags, 1),
+            encoding="utf-8",
+        )
+
     replace_once(
         root / "app/src/main/cpp/gladiorenderer/src/arb_program.c",
         GENERIC_ATTRIB_OLD,

@@ -12,6 +12,26 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PatchWinlatorSourceTest(unittest.TestCase):
+    def test_patches_native_targets_for_16k_pages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cmake = root / "app/src/main/cpp/CMakeLists.txt"
+            gladiorenderer = root / "app/src/main/cpp/gladiorenderer/src/arb_program.c"
+            cmake.parent.mkdir(parents=True)
+            gladiorenderer.parent.mkdir(parents=True)
+            cmake.write_text(
+                "cmake_minimum_required(VERSION 3.22.1)\n\nadd_subdirectory(winlator)\n",
+                encoding="utf-8",
+            )
+            gladiorenderer.write_text(MODULE.GENERIC_ATTRIB_OLD, encoding="utf-8")
+
+            MODULE.patch_native_sources(root)
+            MODULE.patch_native_sources(root)
+
+            patched = cmake.read_text(encoding="utf-8")
+            self.assertEqual(patched.count("max-page-size=16384"), 1)
+            self.assertIn("add_link_options", patched)
+
     def test_relocates_every_imported_library(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

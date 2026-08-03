@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.util.Log;
 
 import org.json.JSONObject;
 
@@ -39,7 +40,7 @@ public final class DataExpressDiagnostics {
         }
         new AlertDialog.Builder(activity)
             .setTitle("Диагностика DataExpress")
-            .setMessage("Для поиска ошибок совместимости приложение записывает технические журналы: этапы запуска, версии Android и APK, сбои Wine/DataExpress/Firebird, EPAS/DLL и сохранения файла.\n\nСодержимое базы, записи, пароли и документы не отправляются. Имя и путь внешней базы заменяются хешем. Разрешить автоматическую отправку отчётов по HTTPS?")
+            .setMessage("Для поиска ошибок совместимости приложение записывает технические журналы: этапы запуска, версии Android и APK, сбои Wine/DataExpress/Firebird, EPAS/DLL и сохранения файла.\n\nСодержимое базы, записи, пароли и документы не отправляются. Имя и путь внешней базы заменяются хешем. Разрешить автоматическую отправку отчётов по HTTPS при доступности сервера диагностики?")
             .setNegativeButton("Только локально", (dialog, which) -> {
                 preferences.edit().putBoolean("consent_seen", true)
                     .putBoolean("upload_enabled", false).apply();
@@ -71,7 +72,7 @@ public final class DataExpressDiagnostics {
             if (error != null) {
                 item.put("errorType", error.getClass().getName());
                 item.put("error", String.valueOf(error.getMessage()));
-                item.put("stack", android.util.Log.getStackTraceString(error));
+                item.put("stack", Log.getStackTraceString(error));
             }
             byte[] line = (item.toString() + "\n").getBytes(StandardCharsets.UTF_8);
             synchronized (FILE_LOCK) {
@@ -83,7 +84,9 @@ public final class DataExpressDiagnostics {
                 }
             }
         }
-        catch (Exception ignored) {}
+        catch (Exception exception) {
+            Log.e("DataExpressDiagnostics", "Cannot append diagnostic event", exception);
+        }
     }
 
     public static void flush(Context context) {
@@ -116,7 +119,9 @@ public final class DataExpressDiagnostics {
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(payload);
             }
-            if (connection.getResponseCode() / 100 == 2) {
+            int responseCode = connection.getResponseCode();
+            String acknowledgement = connection.getHeaderField("X-DataExpress-Diagnostics");
+            if (responseCode == HttpURLConnection.HTTP_ACCEPTED && "accepted".equals(acknowledgement)) {
                 synchronized (FILE_LOCK) {
                     Files.write(logFile(context).toPath(), new byte[0]);
                 }
