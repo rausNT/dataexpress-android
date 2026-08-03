@@ -12,10 +12,9 @@ rm -rf "$WORK"
 git clone --filter=blob:none "$WINLATOR_REPOSITORY" "$WORK"
 git -C "$WORK" checkout --detach "$WINLATOR_COMMIT"
 
-# Keep upstream attribution and make modifications explicit.
+# Keep upstream attribution and apply the same overlay used by the APK build.
 cp "$ROOT/NOTICE-WINLATOR.md" "$WORK/NOTICE-DATAEXPRESS.md"
-mkdir -p "$WORK/dataexpress-overlay"
-cp -R "$ROOT/overlay/." "$WORK/dataexpress-overlay/"
+cp -R "$ROOT/overlay/." "$WORK/"
 
 python3 "$ROOT/scripts/patch-winlator-source.py" "$WORK"
 

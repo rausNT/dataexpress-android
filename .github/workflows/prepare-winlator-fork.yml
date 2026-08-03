@@ -27,7 +27,9 @@ jobs:
         run: |
           test -f "$RUNNER_TEMP/winlator-src/LICENSE"
           grep -qi 'lesser general public license' "$RUNNER_TEMP/winlator-src/LICENSE"
-          test -f "$RUNNER_TEMP/winlator-src/dataexpress-overlay/dataexpress-profile.json"
+          test -f "$RUNNER_TEMP/winlator-src/app/src/main/assets/dataexpress/profile.json"
+          test -f "$RUNNER_TEMP/winlator-src/app/src/main/java/com/winlator/DataExpressBootstrap.java"
+          grep -q 'DataExpress Android' "$RUNNER_TEMP/winlator-src/app/src/main/res/values/strings.xml"
           test -f "$RUNNER_TEMP/winlator-src/NOTICE-DATAEXPRESS.md"
 
       - name: Archive prepared source

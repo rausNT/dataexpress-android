@@ -31,7 +31,7 @@ $packages = @(
     (Join-Path $ComponentsRoot 'PascalScript\Source\PascalScriptFCL.lpk'),
     (Join-Path $ComponentsRoot 'dcpcrypt\dcpcrypt.lpk'),
     (Join-Path $ComponentsRoot 'jvdesign\jvRuntimeDesign.lpk'),
-    (Join-Path $ComponentsRoot 'kcontrols\source\kcontrolslaz.lpk'),
+    (Join-Path $ComponentsRoot 'kcontrols\packages\kcontrols\kcontrolslaz.lpk'),
     (Join-Path $ComponentsRoot 'dbctrlsex\datacontrolsex.lpk'),
     (Join-Path $ComponentsRoot 'bgra\bgrabitmap\bgrabitmappack.lpk'),
     (Join-Path $SourceRoot 'dxcomponents.lpk')
