@@ -365,6 +365,7 @@ def patch_android_application(root: Path) -> None:
         if (dataExpressSessionFinishing) return;
         dataExpressSessionFinishing = true;
         DataExpressProcessTrace.finish(this, status);
+        DataExpressBootstrap.stopWineProcesses(this);
         getIntent().putExtra(DataExpressBootstrap.LAST_RESULT_EXTRA, message);
         runOnUiThread(this::exit);
     }

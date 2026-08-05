@@ -21,7 +21,10 @@ public class DataExpressHomeActivity extends Activity {
         findViewById(R.id.openDemoButton).setOnClickListener(view -> openDemo());
         findViewById(R.id.openDatabaseButton).setOnClickListener(view -> pickDatabase());
         findViewById(R.id.aboutProjectButton).setOnClickListener(view -> showAbout());
-        findViewById(R.id.closeApplicationButton).setOnClickListener(view -> finishAndRemoveTask());
+        findViewById(R.id.closeApplicationButton).setOnClickListener(view -> {
+            DataExpressBootstrap.stopWineProcesses(this);
+            finishAndRemoveTask();
+        });
         updateLastResult(getIntent());
         if (savedInstanceState == null) handleLaunchIntent(getIntent());
     }

@@ -238,6 +238,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('"xserver.setup.failure"', xserver)
             self.assertIn("DataExpressProcessTrace::onLine", xserver)
             self.assertIn("DataExpressProcessTrace.finish(this, status)", xserver)
+            self.assertIn("DataExpressBootstrap.stopWineProcesses(this)", xserver)
             self.assertIn("hasVisibleDataExpressWindow", xserver)
             self.assertIn("dataExpressSessionFinishing", xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")

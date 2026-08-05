@@ -14,6 +14,7 @@ import android.widget.Toast;
 
 import com.winlator.container.Container;
 import com.winlator.container.ContainerManager;
+import com.winlator.core.ProcessHelper;
 import com.winlator.xenvironment.RootFS;
 import com.winlator.xenvironment.RootFSInstaller;
 
@@ -464,6 +465,23 @@ public final class DataExpressBootstrap {
 
     public static void reportBackgroundFailure(MainActivity activity, String prefix, Throwable error) {
         showFailure(activity, prefix, error);
+    }
+
+    public static int stopWineProcesses(Context context) {
+        int stopped = 0;
+        for (ProcessHelper.PStat process : ProcessHelper.getChildProcesses()) {
+            if (!process.guestProcess || process.pid <= 0) continue;
+            try {
+                android.os.Process.killProcess(process.pid);
+                stopped++;
+            }
+            catch (RuntimeException error) {
+                DataExpressDiagnostics.record(context, "wine.process.stop.failure",
+                    "pid=" + process.pid + "; name=" + process.name, error);
+            }
+        }
+        DataExpressDiagnostics.record(context, "wine.processes.stopped", "count=" + stopped, null);
+        return stopped;
     }
 
     private static void showFailure(MainActivity activity, String prefix, Throwable error) {
