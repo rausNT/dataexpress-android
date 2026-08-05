@@ -134,6 +134,9 @@ jobs:
           cp build/runtime/dataexpress-manifest.json winlator/app/src/main/assets/dataexpress/manifest.json
           cp build/runtime/DEMO_DB.DXDB.zip winlator/app/src/main/assets/dataexpress/demo-database.zip
 
+      - name: Test Winlator patcher
+        run: python3 -m unittest discover -s tests -v
+
       - name: Patch pinned Winlator source
         run: python3 scripts/patch-winlator-source.py winlator
 
@@ -162,6 +165,7 @@ jobs:
           unzip -l "$APK" | grep -F 'assets/dataexpress/payload.zip'
           unzip -l "$APK" | grep -F 'assets/dataexpress/manifest.json'
           unzip -l "$APK" | grep -F 'assets/dataexpress/demo-database.zip'
+          unzip -l "$APK" | grep -F 'lib/arm64-v8a/libc++_shared.so'
           unzip -p "$APK" 'lib/arm64-v8a/libzstd-jni-1.5.7-12.so' > /tmp/libzstd-jni.so
           readelf -lW /tmp/libzstd-jni.so | awk '
             / LOAD / { found=1; if ($NF != "0x4000") exit 1 }
@@ -177,7 +181,8 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt
-          grep -Fq "package: name='ru.mydataexpress.android'" dist/APK-BADGING.txt
+          grep -Fq "package: name='com.dataexpr'" dist/APK-BADGING.txt
+          grep -Fq "versionName='0.1.2-winlator-11.1'" dist/APK-BADGING.txt
           grep -Fq "application-label:'DataExpress Android'" dist/APK-BADGING.txt
           grep -Fq "application-label-ru:'DataExpress Android'" dist/APK-BADGING.txt
 

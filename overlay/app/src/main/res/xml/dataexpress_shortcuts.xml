@@ -9,7 +9,7 @@
         android:shortcutDisabledMessage="@string/dataexpress_open_database_disabled">
         <intent
             android:action="ru.mydataexpress.android.action.OPEN_DATABASE"
-            android:targetPackage="ru.mydataexpress.android"
-            android:targetClass="com.winlator.MainActivity" />
+            android:targetPackage="com.dataexpr"
+            android:targetClass="com.winlator.DataExpressHomeActivity" />
     </shortcut>
 </shortcuts>

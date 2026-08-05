@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.util.DisplayMetrics;
 import android.widget.Toast;
 
 import com.winlator.container.Container;
@@ -36,6 +37,8 @@ import java.util.zip.ZipInputStream;
 /** DataExpress-specific first-run, database import and launch orchestration. */
 public final class DataExpressBootstrap {
     public static final String ACTION_OPEN_DATABASE = "ru.mydataexpress.android.action.OPEN_DATABASE";
+    public static final String ACTION_LAUNCH_DEMO = "ru.mydataexpress.android.action.LAUNCH_DEMO";
+    public static final String LAST_RESULT_EXTRA = "dataexpress_last_result";
     private static final String CONTAINER_NAME = "DataExpress";
     private static final String ASSET_PROFILE = "dataexpress/profile.json";
     private static final String ASSET_PAYLOAD = "dataexpress/payload.zip";
@@ -132,6 +135,12 @@ public final class DataExpressBootstrap {
     }
 
     private static void stageAndLaunch(MainActivity activity, Container container, Uri sourceUri) {
+        if (container.getStartupSelection() != Container.STARTUP_SELECTION_NORMAL) {
+            container.setStartupSelection(Container.STARTUP_SELECTION_NORMAL);
+            container.saveData();
+            DataExpressDiagnostics.record(activity, "container.services",
+                "startupSelection=normal", null);
+        }
         DataExpressDiagnostics.record(activity, "database.stage.start",
             sourceUri == null ? "embedded-demo" : "external:" + shortHash(sourceUri.toString()), null);
         Executors.newSingleThreadExecutor().execute(() -> {
@@ -142,8 +151,18 @@ public final class DataExpressBootstrap {
                 File database;
                 if (sourceUri == null) {
                     File demoDir = new File(applicationDir, "databases/demo");
-                    database = new File(demoDir, "DEMO_DB.DXDB");
-                    if (!database.isFile()) unzipAsset(activity, ASSET_DEMO, demoDir);
+                    // The bundled training database is a regular Firebird database.
+                    // Its extension must remain .FDB: DataExpress uses .DXDB to select
+                    // a different Firebird 5 connection path.
+                    database = new File(demoDir, "DEMO_DB.FDB");
+                    if (!database.isFile()) {
+                        unzipAsset(activity, ASSET_DEMO, demoDir);
+                        File packagedName = new File(demoDir, "DEMO_DB.DXDB");
+                        if (!database.isFile() && packagedName.isFile()
+                            && !packagedName.renameTo(database)) {
+                            throw new IOException("Cannot rename bundled demo database to " + database);
+                        }
+                    }
                 }
                 else {
                     String name = sanitizeFilename(getDisplayName(activity, sourceUri));
@@ -153,6 +172,7 @@ public final class DataExpressBootstrap {
                 }
 
                 if (!database.isFile()) throw new IOException("Database was not staged: " + database);
+                configureDisplay(activity, container, applicationDir);
                 DataExpressDiagnostics.record(activity, "database.stage.ready",
                     "size=" + database.length(), null);
                 showLaunchReport(activity, container, applicationDir, database, sourceUri);
@@ -208,6 +228,50 @@ public final class DataExpressBootstrap {
         return String.format(Locale.ROOT, "%.1f МиБ", kib / 1024.0);
     }
 
+    private static void configureDisplay(MainActivity activity, Container container,
+                                         File applicationDir) throws IOException {
+        DisplayMetrics metrics = new DisplayMetrics();
+        activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        int displayWidth = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int displayHeight = Math.min(metrics.widthPixels, metrics.heightPixels);
+
+        int virtualHeight = Math.max(640, Math.min(800, displayHeight));
+        virtualHeight = roundToMultiple(virtualHeight, 16);
+        double aspect = displayHeight > 0 ? (double)displayWidth / displayHeight : 1.6d;
+        int virtualWidth = roundToMultiple((int)Math.round(virtualHeight * aspect), 16);
+        virtualWidth = Math.max(1024, Math.min(1920, virtualWidth));
+        String screenSize = virtualWidth + "x" + virtualHeight;
+
+        if (!screenSize.equals(container.getScreenSize())) {
+            container.setScreenSize(screenSize);
+            container.saveData();
+        }
+
+        File config = new File(applicationDir, "dataexpress.cfg");
+        if (config.isFile()) {
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            try (InputStream input = new BufferedInputStream(new FileInputStream(config))) {
+                copy(input, buffer);
+            }
+            String text = buffer.toString("UTF-8");
+            String updated = text
+                .replaceAll("(?m)^FormState=\\d+", "FormState=2")
+                .replaceAll("(?m)^LogErrors=\\d+", "LogErrors=1");
+            if (!updated.equals(text)) {
+                try (OutputStream output = new BufferedOutputStream(new FileOutputStream(config))) {
+                    output.write(updated.getBytes(StandardCharsets.UTF_8));
+                }
+            }
+        }
+
+        DataExpressDiagnostics.record(activity, "display.configure",
+            "android=" + displayWidth + "x" + displayHeight + ", wine=" + screenSize, null);
+    }
+
+    private static int roundToMultiple(int value, int multiple) {
+        return Math.max(multiple, ((value + multiple / 2) / multiple) * multiple);
+    }
+
     private static void installPayloadIfNeeded(Context context, File applicationDir) throws Exception {
         String manifest = readAssetText(context, ASSET_MANIFEST);
         String revision = shortHash(manifest);
@@ -247,8 +311,9 @@ public final class DataExpressBootstrap {
         Intent intent = activity.getIntent();
         String source = intent.getStringExtra(SOURCE_URI_EXTRA);
         String databasePath = intent.getStringExtra(DATABASE_EXTRA);
+        String lastResult = intent.getStringExtra(LAST_RESULT_EXTRA);
         if (source == null || databasePath == null) {
-            activity.finishAndRemoveTask();
+            returnHome(activity, lastResult);
             return;
         }
 
@@ -263,14 +328,25 @@ public final class DataExpressBootstrap {
             }
             Exception result = failure;
             activity.runOnUiThread(() -> {
+                String message = lastResult;
                 if (result != null) {
                     Toast.makeText(activity,
                         "Не удалось записать изменения на флешку; рабочая копия сохранена внутри приложения.",
                         Toast.LENGTH_LONG).show();
+                    message = (message == null ? "" : message + "\n\n")
+                        + "Не удалось записать изменения во внешний файл.";
                 }
-                activity.finishAndRemoveTask();
+                returnHome(activity, message);
             });
         });
+    }
+
+    private static void returnHome(XServerDisplayActivity activity, String result) {
+        Intent home = new Intent(activity, DataExpressHomeActivity.class);
+        home.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (result != null && !result.isEmpty()) home.putExtra(LAST_RESULT_EXTRA, result);
+        activity.startActivity(home);
+        activity.finish();
     }
 
     private static String toDataExpressDosPath(File applicationDir, File database) throws IOException {
