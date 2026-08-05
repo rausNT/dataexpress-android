@@ -166,13 +166,23 @@ public final class DataExpressBootstrap {
                     }
                 }
                 else {
-                    String name = sanitizeFilename(getDisplayName(activity, sourceUri));
+                    String sourceName = getDisplayName(activity, sourceUri);
+                    String name = safeStagedFilename(sourceName);
                     File databaseDir = new File(applicationDir, "databases/external/" + shortHash(sourceUri.toString()));
                     database = new File(databaseDir, name);
                     copyFromUri(activity, sourceUri, database);
+                    DataExpressDiagnostics.record(activity, "database.runtime.select",
+                        "sourceNameHash=" + shortHash(sourceName)
+                            + "; format=" + databaseFormat(name)
+                            + "; engine=" + databaseEngine(name)
+                            + "; stagedName=" + name,
+                        null);
                 }
 
                 if (!database.isFile()) throw new IOException("Database was not staged: " + database);
+                if (database.getName().toLowerCase(Locale.ROOT).endsWith(".dxdb")) {
+                    applyFirebirdWineCompatibility(activity, applicationDir);
+                }
                 configureDisplay(activity, container, applicationDir);
                 DataExpressDiagnostics.record(activity, "database.stage.ready",
                     "size=" + database.length(), null);
@@ -189,9 +199,12 @@ public final class DataExpressBootstrap {
         File executable = new File(applicationDir, "DataExpress.exe");
         File firebirdEngine = new File(applicationDir, "fb5/plugins/engine13.dll");
         String source = sourceUri == null ? "Встроенная учебная база" : "Выбранный файл Android / USB";
+        String displayName = sourceUri == null ? database.getName() : getDisplayName(activity, sourceUri);
+        String engine = databaseEngine(database.getName());
         String report =
-            "База: " + database.getName() + "\n" +
+            "База: " + displayName + "\n" +
             "Источник: " + source + "\n" +
+            "Формат: " + databaseFormat(database.getName()) + " · движок: " + engine + "\n" +
             "Размер: " + formatSize(database.length()) + "\n\n" +
             statusLine(executable.isFile(), "DataExpress Win32 подготовлен") + "\n" +
             statusLine(firebirdEngine.isFile(), "Firebird Embedded подготовлен") + "\n" +
@@ -281,12 +294,84 @@ public final class DataExpressBootstrap {
         if (marker.isFile() && executable.isFile()) return;
 
         unzipAsset(context, ASSET_PAYLOAD, applicationDir);
+        int removedLegacyFiles = removeLegacyBackslashPayloadFiles(applicationDir);
         if (!executable.isFile()) throw new IOException("DataExpress.exe is absent from the payload");
         if (!applicationDir.isDirectory() && !applicationDir.mkdirs()) {
             throw new IOException("Cannot create " + applicationDir);
         }
         try (OutputStream output = new FileOutputStream(marker)) {
             output.write(manifest.getBytes(StandardCharsets.UTF_8));
+        }
+        DataExpressDiagnostics.record(context, "payload.install",
+            "revision=" + revision + "; removedLegacyBackslashFiles=" + removedLegacyFiles, null);
+    }
+
+    private static int removeLegacyBackslashPayloadFiles(File applicationDir) {
+        File[] files = applicationDir.listFiles();
+        if (files == null) return 0;
+        int removed = 0;
+        for (File file : files) {
+            if (file.isFile() && file.getName().contains("\\") && file.delete()) removed++;
+        }
+        return removed;
+    }
+
+    /**
+     * Validate the Firebird 5.0.3 x86 source build prepared specifically for Wine/Winlator.
+     * The compatibility changes live in Firebird's source code, so runtime binary patching is
+     * intentionally forbidden. This prevents PE relocations from rewriting patched instructions
+     * and causing EPrivilege on real devices.
+     */
+    private static void applyFirebirdWineCompatibility(Context context, File applicationDir)
+        throws IOException {
+        final String[][] modules = new String[][] {
+            {"fb5/fbclient.dll", "1827840", "4869f96ee2faae94b883c05a81ebe9b573b5465788d0109815ec900c53d605f2"},
+            {"fb5/intl/fbintl.dll", "1067008", "8c92a8c742759c5b787e8ca16b840a7383e7b674f9261deca9bcc98fb886375b"},
+            {"fb5/plugins/chacha.dll", "392704", "fbc16fc26155b6b3faa970285d6be69defea4ab024a8ebc5cb2ad4ae2a8de2e6"},
+            {"fb5/plugins/engine13.dll", "8262656", "9c44d86174da80dfaaf86955e96e1c7beb2288ed17f4bba15e49bc4ae6e1d261"}
+        };
+        StringBuilder invalid = new StringBuilder();
+        for (String[] module : modules) {
+            File file = new File(applicationDir, module[0]);
+            long expectedLength = Long.parseLong(module[1]);
+            boolean valid = file.isFile()
+                && file.length() == expectedLength
+                && module[2].equals(sha256File(file));
+            if (!valid) {
+                if (invalid.length() > 0) invalid.append(',');
+                invalid.append(module[0]);
+            }
+        }
+
+        File lockDirectory = new File(applicationDir, "fb5/lock");
+        if (!lockDirectory.isDirectory() && !lockDirectory.mkdirs()) {
+            throw new IOException("Cannot create private Firebird lock directory " + lockDirectory);
+        }
+
+        String details = "sourceBuild=firebird-5.0.3-wine-compat; modules=" + modules.length
+            + "; binaryPatches=0; invalid=" + invalid.length();
+        DataExpressDiagnostics.record(context, "firebird.compat.source-build", details, null);
+        if (invalid.length() > 0) {
+            throw new IOException("Firebird/Wine source build validation failed: " + invalid);
+        }
+    }
+
+    private static String sha256File(File file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+                int read;
+                while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+            }
+            StringBuilder result = new StringBuilder();
+            for (byte value : digest.digest()) {
+                result.append(String.format(Locale.ROOT, "%02x", value & 0xFF));
+            }
+            return result.toString();
+        }
+        catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 
@@ -344,7 +429,7 @@ public final class DataExpressBootstrap {
 
     private static void returnHome(XServerDisplayActivity activity, String result) {
         Intent home = new Intent(activity, DataExpressHomeActivity.class);
-        home.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        home.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
         if (result != null && !result.isEmpty()) home.putExtra(LAST_RESULT_EXTRA, result);
         activity.startActivity(home);
         activity.finish();
@@ -438,9 +523,23 @@ public final class DataExpressBootstrap {
         return lower.endsWith(".dxdb") || lower.endsWith(".fdb");
     }
 
-    private static String sanitizeFilename(String name) {
-        String cleaned = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
-        return cleaned.isEmpty() ? "database.dxdb" : cleaned;
+    /**
+     * Old Win32 DataExpress converts database paths through the active Windows
+     * code page. Keep the original name in Android's document provider, but use
+     * a stable ASCII-only working name inside Wine. The URI-specific parent
+     * directory already prevents collisions between imported databases.
+     */
+    private static String safeStagedFilename(String sourceName) {
+        String lower = sourceName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".fdb") ? "database.FDB" : "database.DXDB";
+    }
+
+    private static String databaseFormat(String name) {
+        return name.toLowerCase(Locale.ROOT).endsWith(".fdb") ? "FDB / ODS 11.x" : "DXDB / ODS 13.x";
+    }
+
+    private static String databaseEngine(String name) {
+        return name.toLowerCase(Locale.ROOT).endsWith(".fdb") ? "Firebird 2.5" : "Firebird 5";
     }
 
     private static String shortHash(String value) {

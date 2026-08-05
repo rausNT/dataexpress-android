@@ -24,6 +24,32 @@ if (-not (Test-Path -LiteralPath $script:Lazbuild)) {
     throw "lazbuild.exe was not found: $script:Lazbuild"
 }
 
+# A portable Lazarus extraction does not run the installer step that normally
+# creates fpc.cfg. Generate the compiler's own stock configuration so the RTL,
+# FCL and binutils paths resolve without requiring a machine-wide install.
+$fpcExecutable = Get-ChildItem -LiteralPath (Join-Path $LazarusRoot 'fpc') `
+    -Recurse -Filter 'fpc.exe' -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.DirectoryName -like '*\bin\i386-win32' } |
+    Select-Object -First 1
+if ($null -ne $fpcExecutable) {
+    $fpcBin = $fpcExecutable.DirectoryName
+    $env:Path = "$fpcBin;$env:Path"
+    $fpcConfig = Join-Path $fpcBin 'fpc.cfg'
+    if (-not (Test-Path -LiteralPath $fpcConfig)) {
+        $fpcMkCfg = Join-Path $fpcBin 'fpcmkcfg.exe'
+        if (-not (Test-Path -LiteralPath $fpcMkCfg)) {
+            throw "Portable FPC has no fpcmkcfg.exe: $fpcMkCfg"
+        }
+        $fpcBase = Split-Path -Parent (Split-Path -Parent $fpcBin)
+        & $fpcMkCfg -d "basepath=$fpcBase" `
+            -d "localbasepath=$env:LOCALAPPDATA\FreePascal" `
+            -o $fpcConfig -s
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fpcConfig)) {
+            throw "Could not generate portable FPC configuration: $fpcConfig"
+        }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $PrimaryConfigPath | Out-Null
 $common = @("--pcp=$PrimaryConfigPath")
 $packages = @(
@@ -70,10 +96,17 @@ finally {
 
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $runtimeRoot = Join-Path $SourceRoot '_test'
-Get-ChildItem -LiteralPath $runtimeRoot | Where-Object {
-    $_.Name -notin @('PadegUC.dll', 'dataexpress.exe')
-} | Copy-Item -Destination $OutputRoot -Recurse
-Copy-Item -LiteralPath $executable -Destination (Join-Path $OutputRoot 'DataExpress.exe')
+Get-ChildItem -LiteralPath $runtimeRoot -Recurse -File | Where-Object {
+    $relative = $_.FullName.Substring($runtimeRoot.Length).TrimStart('\')
+    $relative -notin @('PadegUC.dll', 'dataexpress.exe')
+} | ForEach-Object {
+    $relative = $_.FullName.Substring($runtimeRoot.Length).TrimStart('\')
+    $destination = Join-Path $OutputRoot $relative
+    $parent = Split-Path -Parent $destination
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+}
+Copy-Item -LiteralPath $executable -Destination (Join-Path $OutputRoot 'DataExpress.exe') -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'LICENSE.txt') -Destination $OutputRoot -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'NOTICE.txt') -Destination $OutputRoot -Force
 

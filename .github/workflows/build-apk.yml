@@ -33,6 +33,27 @@ jobs:
           ref: 179545a5c4e18a1c4468656980984024b7228ccb
           path: upstream/dataexpress-depend
 
+      - name: Apply legacy DataExpress XML reader fix
+        shell: pwsh
+        run: |
+          git -C upstream/dataexpress apply `
+            "$PWD/patches/dataexpress/legacy-xml-reader.patch"
+
+      - name: Download pinned Firebird 5 Wine runtime
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path build/runtime | Out-Null
+          gh release download demo-assets-v1 `
+            --repo "${{ github.repository }}" `
+            --pattern firebird-5.0.3-wine-x86.zip `
+            --dir build/runtime
+          $archive = 'build/runtime/firebird-5.0.3-wine-x86.zip'
+          $expected = '9E4F56C368DF2C69B7BB8DB12B4493EB63D198B3D51E6BD9079E7BB73E92E118'
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "Firebird runtime checksum mismatch: $actual" }
+
       - name: Install Lazarus 4.6 and FPC 3.2.2 (Win32)
         shell: pwsh
         run: |
@@ -57,11 +78,13 @@ jobs:
             -ComponentsRoot (Join-Path $PWD 'upstream/dataexpress-depend') `
             -OutputRoot (Join-Path $PWD 'build/runtime/dataexpress') `
             -PrimaryConfigPath (Join-Path $env:RUNNER_TEMP 'lazarus-config')
+          Expand-Archive -LiteralPath build/runtime/firebird-5.0.3-wine-x86.zip `
+            -DestinationPath build/runtime/dataexpress/fb5 -Force
           python scripts/verify-runtime-payload.py build/runtime/dataexpress `
-            --source-revision 89523b3125a5bda55aa7aca7232c8773913fed99 `
+            --source-revision 89523b3125a5bda55aa7aca7232c8773913fed99+legacy-xml-fix `
             --manifest build/runtime/dataexpress-manifest.json
-          Compress-Archive -Path build/runtime/dataexpress/* `
-            -DestinationPath build/runtime/dataexpress-payload.zip
+          python scripts/package-runtime-payload.py build/runtime/dataexpress `
+            build/runtime/dataexpress-payload.zip
 
       - name: Upload DataExpress runtime
         uses: actions/upload-artifact@v4

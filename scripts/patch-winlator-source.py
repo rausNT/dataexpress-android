@@ -325,6 +325,18 @@ def patch_android_application(root: Path) -> None:
 
     replace_once(
         xserver,
+        """            envVars.putAll(container.getEnvVars());
+            if (shortcut != null) envVars.putAll(shortcut.getExtra("envVars"));""",
+        """            envVars.putAll(container.getEnvVars());
+            if (getIntent().getBooleanExtra("dataexpress_mode", false)) {
+                envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock");
+            }
+            if (shortcut != null) envVars.putAll(shortcut.getExtra("envVars"));""",
+        "DataExpress private Firebird lock directory",
+    )
+
+    replace_once(
+        xserver,
         """        guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> exit());
         environment.addComponent(guestProgramLauncherComponent);""",

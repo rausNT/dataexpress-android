@@ -1,0 +1,39 @@
+diff --git a/src/common/isc_sync.cpp b/src/common/isc_sync.cpp
+--- a/src/common/isc_sync.cpp
++++ b/src/common/isc_sync.cpp
+@@ -1512,6 +1512,18 @@ static bool getMappedFileName(void* addr, PathName& mappedName)
+ 		//system_call_failed::raise("GetMappedFileName");
+ 		return false;
+ 
++	// Wine may return an already usable DOS path prefixed with the NT object
++	// manager marker instead of a native device path.  Strip only that exact
++	// form and keep the normal Windows device-to-drive conversion below.
++	if (mapLen > 6 &&
++		mapName[0] == '\\' && mapName[1] == '?' && mapName[2] == '?' && mapName[3] == '\\' &&
++		((mapName[4] >= 'A' && mapName[4] <= 'Z') || (mapName[4] >= 'a' && mapName[4] <= 'z')) &&
++		mapName[5] == ':' && mapName[6] == '\\')
++	{
++		mappedName.erase(0, 4);
++		return true;
++	}
++
+ 	char dosDevice[] = {'A', ':', 0};
+ 
+ 	DWORD drives = GetLogicalDrives();
+diff --git a/src/common/utils.cpp b/src/common/utils.cpp
+--- a/src/common/utils.cpp
++++ b/src/common/utils.cpp
+@@ -622,6 +622,13 @@ private:
+ 
+ 	void init()
+ 	{
++		// Wine does not implement the private namespace API used by Firebird 5.
++		// Let private_kernel_object_name() use its existing global-name fallback
++		// instead of calling an unavailable kernel32 routine.
++		const HMODULE ntdll = GetModuleHandleA("ntdll.dll");
++		if (ntdll && GetProcAddress(ntdll, "wine_get_version"))
++			return;
++
+ 		alignas(SID) char sid[SECURITY_MAX_SID_SIZE];
+ 		DWORD cbSid = sizeof(sid);
+ 

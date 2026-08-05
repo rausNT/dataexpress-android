@@ -8,14 +8,17 @@ import java.util.Deque;
 /** Bounded Box64/Wine output capture used only by the DataExpress launcher. */
 public final class DataExpressProcessTrace {
     private static final int MAX_LINES = 120;
+    private static final int MAX_SIGNAL_LINES = 40;
     private static final int MAX_LINE_LENGTH = 800;
     private static final Deque<String> LINES = new ArrayDeque<>();
+    private static final Deque<String> SIGNAL_LINES = new ArrayDeque<>();
     private static String command = "";
 
     private DataExpressProcessTrace() {}
 
     public static synchronized void reset() {
         LINES.clear();
+        SIGNAL_LINES.clear();
         command = "";
     }
 
@@ -31,10 +34,27 @@ public final class DataExpressProcessTrace {
             : value;
         while (LINES.size() >= MAX_LINES) LINES.removeFirst();
         LINES.addLast(line);
+        String lower = line.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("80000100")
+            || lower.contains("c0000096")
+            || lower.contains("privileged instruction")
+            || lower.contains("dispatch_exception code=")
+            || lower.contains("unimplemented function")
+            || lower.contains("wine: call from")
+            || lower.contains("failed to load")
+            || lower.contains("err:module")) {
+            while (SIGNAL_LINES.size() >= MAX_SIGNAL_LINES) SIGNAL_LINES.removeFirst();
+            SIGNAL_LINES.addLast(line);
+        }
     }
 
     public static synchronized String finish(Context context, int status) {
         StringBuilder output = new StringBuilder();
+        if (!SIGNAL_LINES.isEmpty()) {
+            output.append("Relevant Wine diagnostics:");
+            for (String line : SIGNAL_LINES) output.append('\n').append(line);
+            output.append("\n\nLast Wine output:");
+        }
         for (String line : LINES) {
             if (output.length() > 0) output.append('\n');
             output.append(line);

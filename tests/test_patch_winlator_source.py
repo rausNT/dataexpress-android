@@ -14,6 +14,52 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PatchWinlatorSourceTest(unittest.TestCase):
+    def test_legacy_xml_patch_preserves_dataexpress_source_markers(self):
+        patch = (
+            REPO_ROOT / "patches/dataexpress/legacy-xml-reader.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("procedure TSAXBaseReader.ParseStream", patch)
+        self.assertIn("'[__DATAEXPRESS_PARENT__'", patch)
+        self.assertIn("'__DATAEXPRESS_PARENT__', '!'", patch)
+        self.assertIn("'__DATAEXPRESS_OPTIONAL_PARENT__', '?!'", patch)
+
+        build_script = (
+            REPO_ROOT / "scripts/build-dataexpress-windows.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("fpcmkcfg.exe", build_script)
+        self.assertIn("-Recurse -File", build_script)
+
+        verifier = (
+            REPO_ROOT / "scripts/verify-runtime-payload.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("FIREBIRD_WINE_MODULES", verifier)
+        self.assertIn("9c44d86174da80dfaaf86955e96e1c7beb2288ed17f4bba15e49bc4ae6e1d261", verifier)
+
+    def test_external_database_uses_ascii_working_name_and_logs_engine(self):
+        bootstrap = (
+            REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressBootstrap.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn('return lower.endsWith(".fdb") ? "database.FDB" : "database.DXDB";', bootstrap)
+        self.assertIn('"database.runtime.select"', bootstrap)
+        self.assertIn('"Firebird 2.5" : "Firebird 5"', bootstrap)
+        self.assertIn("applyFirebirdWineCompatibility(activity, applicationDir);", bootstrap)
+        self.assertIn('"firebird.compat.source-build"', bootstrap)
+        self.assertIn('"sourceBuild=firebird-5.0.3-wine-compat', bootstrap)
+        self.assertIn('"fb5/plugins/engine13.dll", "8262656"', bootstrap)
+        self.assertIn("module[2].equals(sha256File(file))", bootstrap)
+        self.assertIn('"; binaryPatches=0;', bootstrap)
+        self.assertNotIn("RandomAccessFile", bootstrap)
+        self.assertNotIn("queryDosDeviceBranchOffset", bootstrap)
+
+        trace = (
+            REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressProcessTrace.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn('lower.contains("80000100")', trace)
+        self.assertIn('lower.contains("c0000096")', trace)
+        self.assertIn('lower.contains("dispatch_exception code=")', trace)
+        self.assertIn('lower.contains("unimplemented function")', trace)
+        self.assertIn('Relevant Wine diagnostics:', trace)
+
     def test_dataexpress_profile_keeps_windows_services_enabled(self):
         profile = json.loads(
             (REPO_ROOT / "overlay/app/src/main/assets/dataexpress/profile.json").read_text(encoding="utf-8")
@@ -173,6 +219,9 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             String guestExecutable = "wine explorer /desktop="+desktopName+","+xServer.screenInfo+" "+getWineStartCommand();
             guestProgramLauncherComponent.setGuestExecutable(guestExecutable);
 
+            envVars.putAll(container.getEnvVars());
+            if (shortcut != null) envVars.putAll(shortcut.getExtra("envVars"));
+
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> exit());
         environment.addComponent(guestProgramLauncherComponent);
@@ -239,6 +288,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn("DataExpressProcessTrace::onLine", xserver)
             self.assertIn("DataExpressProcessTrace.finish(this, status)", xserver)
             self.assertIn("DataExpressBootstrap.stopWineProcesses(this)", xserver)
+            self.assertIn('envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock")', xserver)
             self.assertIn("hasVisibleDataExpressWindow", xserver)
             self.assertIn("dataExpressSessionFinishing", xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")

@@ -12,6 +12,13 @@
         android:orientation="vertical"
         android:padding="32dp">
 
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:contentDescription="@string/app_name"
+            android:scaleType="centerInside"
+            android:src="@drawable/dataexpress_android_logo" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
