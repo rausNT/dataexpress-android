@@ -58,7 +58,25 @@ class PatchWinlatorSourceTest(unittest.TestCase):
         self.assertIn('lower.contains("c0000096")', trace)
         self.assertIn('lower.contains("dispatch_exception code=")', trace)
         self.assertIn('lower.contains("unimplemented function")', trace)
+        self.assertIn('lower.contains("out of memory")', trace)
+        self.assertIn('lower.contains("signal 9")', trace)
         self.assertIn('Relevant Wine diagnostics:', trace)
+
+        diagnostics = (
+            REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressDiagnostics.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn("copyToClipboard(Activity activity)", diagnostics)
+        self.assertIn("exportToUri(Context context, Uri destination)", diagnostics)
+        self.assertIn("Intent.createChooser", diagnostics)
+        self.assertIn("shareSnapshot", diagnostics)
+        self.assertIn("systemAvailableMemoryMb", diagnostics)
+        home = (
+            REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressHomeActivity.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn("SAVE_DIAGNOSTICS_REQUEST", home)
+        self.assertIn("offerDiagnosticsAfterFailure", home)
+        self.assertIn('lower.contains("код 137")', home)
+        self.assertIn("DataExpressDiagnostics.share(this)", home)
 
     def test_dataexpress_profile_keeps_windows_services_enabled(self):
         profile = json.loads(
@@ -152,7 +170,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             root = Path(temporary)
             files = {
                 "app/build.gradle": (
-                    "applicationId 'com.winlator'\nversionName \"11.1\"\n"
+                    "applicationId 'com.winlator'\nversionCode 28\nversionName \"11.1\"\n"
                     "implementation 'com.github.luben:zstd-jni:1.5.2-3@aar'\n"
                 ),
                 "app/src/main/res/values/strings.xml": '<string name="app_name">Winlator</string>\n',
@@ -272,6 +290,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("com.dataexpr", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("versionCode 29", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("0.1.3-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("zstd-jni:1.5.7-12", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
@@ -291,6 +311,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock")', xserver)
             self.assertIn("hasVisibleDataExpressWindow", xserver)
             self.assertIn("dataExpressSessionFinishing", xserver)
+            self.assertIn("код 137 / SIGKILL", xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressRuntimePaths.patchRuntime", launcher)
             app_utils = (root / "app/src/main/java/com/winlator/core/AppUtils.java").read_text(encoding="utf-8")

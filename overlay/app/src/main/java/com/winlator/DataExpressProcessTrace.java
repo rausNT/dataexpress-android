@@ -42,6 +42,10 @@ public final class DataExpressProcessTrace {
             || lower.contains("unimplemented function")
             || lower.contains("wine: call from")
             || lower.contains("failed to load")
+            || lower.contains("out of memory")
+            || lower.contains("oom")
+            || lower.contains("killed")
+            || lower.contains("signal 9")
             || lower.contains("err:module")) {
             while (SIGNAL_LINES.size() >= MAX_SIGNAL_LINES) SIGNAL_LINES.removeFirst();
             SIGNAL_LINES.addLast(line);

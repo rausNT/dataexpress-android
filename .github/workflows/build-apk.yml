@@ -205,7 +205,8 @@ jobs:
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt
           grep -Fq "package: name='com.dataexpr'" dist/APK-BADGING.txt
-          grep -Fq "versionName='0.1.2-winlator-11.1'" dist/APK-BADGING.txt
+          grep -Fq "versionCode='29'" dist/APK-BADGING.txt
+          grep -Fq "versionName='0.1.3-preview.1-winlator-11.1'" dist/APK-BADGING.txt
           grep -Fq "application-label:'DataExpress Android'" dist/APK-BADGING.txt
           grep -Fq "application-label-ru:'DataExpress Android'" dist/APK-BADGING.txt
 

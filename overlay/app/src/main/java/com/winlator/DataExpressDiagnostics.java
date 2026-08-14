@@ -1,21 +1,35 @@
 package com.winlator;
 
+import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
+import android.widget.Toast;
+
+import androidx.core.content.FileProvider;
 
 import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
@@ -25,6 +39,7 @@ public final class DataExpressDiagnostics {
     private static final String ENDPOINT =
         "https://dx.74-208-142-118.sslip.io/api/android-diagnostics";
     private static final Object FILE_LOCK = new Object();
+    private static final int MAX_CLIPBOARD_BYTES = 256 * 1024;
     private static volatile boolean handlerInstalled;
 
     private DataExpressDiagnostics() {}
@@ -69,6 +84,17 @@ public final class DataExpressDiagnostics {
             item.put("sdk", Build.VERSION.SDK_INT);
             item.put("device", Build.MANUFACTURER + " " + Build.MODEL);
             item.put("abis", String.join(",", Build.SUPPORTED_ABIS));
+            ActivityManager manager = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager != null) {
+                ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+                manager.getMemoryInfo(memory);
+                item.put("systemAvailableMemoryMb", memory.availMem / (1024 * 1024));
+                item.put("systemMemoryThresholdMb", memory.threshold / (1024 * 1024));
+                item.put("systemLowMemory", memory.lowMemory);
+            }
+            Runtime runtime = Runtime.getRuntime();
+            item.put("appMaxMemoryMb", runtime.maxMemory() / (1024 * 1024));
+            item.put("appFreeMemoryMb", runtime.freeMemory() / (1024 * 1024));
             if (error != null) {
                 item.put("errorType", error.getClass().getName());
                 item.put("error", String.valueOf(error.getMessage()));
@@ -93,6 +119,118 @@ public final class DataExpressDiagnostics {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         if (!preferences.getBoolean("upload_enabled", false)) return;
         Executors.newSingleThreadExecutor().execute(() -> upload(context.getApplicationContext()));
+    }
+
+    public static boolean hasEvents(Context context) {
+        synchronized (FILE_LOCK) {
+            File file = logFile(context);
+            return file.isFile() && file.length() > 0;
+        }
+    }
+
+    public static String suggestedFilename() {
+        String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
+        return "dataexpress-diagnostics-" + timestamp + ".jsonl";
+    }
+
+    public static void copyToClipboard(Activity activity) {
+        try {
+            String text = clipboardText(activity);
+            if (text.isEmpty()) {
+                Toast.makeText(activity, "Журнал диагностики пока пуст.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            ClipboardManager clipboard =
+                (ClipboardManager)activity.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) throw new IllegalStateException("Clipboard service is unavailable");
+            clipboard.setPrimaryClip(ClipData.newPlainText("DataExpress diagnostics", text));
+            Toast.makeText(activity, "Журнал скопирован в буфер обмена.", Toast.LENGTH_LONG).show();
+        }
+        catch (Exception error) {
+            Toast.makeText(activity, "Не удалось скопировать журнал: " + error.getMessage(),
+                Toast.LENGTH_LONG).show();
+        }
+    }
+
+    public static void exportToUri(Context context, Uri destination) throws Exception {
+        synchronized (FILE_LOCK) {
+            File source = logFile(context);
+            if (!source.isFile() || source.length() == 0) {
+                throw new IllegalStateException("Журнал диагностики пока пуст");
+            }
+            try (InputStream input = new FileInputStream(source);
+                 OutputStream output = context.getContentResolver().openOutputStream(destination, "w")) {
+                if (output == null) throw new IllegalStateException("Не удалось открыть выбранный файл");
+                byte[] buffer = new byte[32 * 1024];
+                int count;
+                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+            }
+        }
+    }
+
+    public static void share(Activity activity) {
+        try {
+            File source = shareSnapshot(activity);
+            Uri uri = FileProvider.getUriForFile(activity,
+                activity.getPackageName() + ".FileProvider", source);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_SUBJECT, "Журнал запуска DataExpress Android");
+            send.putExtra(Intent.EXTRA_TEXT,
+                "Технический журнал DataExpress Android. Базы данных, документы и пароли не приложены.");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.setClipData(ClipData.newRawUri("DataExpress diagnostics", uri));
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(Intent.createChooser(send, "Отправить журнал DataExpress"));
+        }
+        catch (IllegalStateException empty) {
+            Toast.makeText(activity, empty.getMessage(), Toast.LENGTH_LONG).show();
+        }
+        catch (Exception error) {
+            Toast.makeText(activity, "Не удалось открыть меню отправки: " + error.getMessage(),
+                Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private static File shareSnapshot(Context context) throws Exception {
+        synchronized (FILE_LOCK) {
+            File source = logFile(context);
+            if (!source.isFile() || source.length() == 0) {
+                throw new IllegalStateException("Журнал диагностики пока пуст.");
+            }
+            File directory = new File(source.getParentFile(), "share");
+            if (!directory.isDirectory() && !directory.mkdirs()) {
+                throw new IllegalStateException("Не удалось подготовить файл журнала");
+            }
+            File[] oldSnapshots = directory.listFiles();
+            if (oldSnapshots != null) {
+                for (File old : oldSnapshots) if (old.isFile()) old.delete();
+            }
+            File snapshot = new File(directory, suggestedFilename());
+            try (InputStream input = new FileInputStream(source);
+                 OutputStream output = new FileOutputStream(snapshot)) {
+                byte[] buffer = new byte[32 * 1024];
+                int count;
+                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+            }
+            return snapshot;
+        }
+    }
+
+    private static String clipboardText(Context context) throws Exception {
+        synchronized (FILE_LOCK) {
+            File file = logFile(context);
+            if (!file.isFile() || file.length() == 0) return "";
+            byte[] payload = Files.readAllBytes(file.toPath());
+            if (payload.length <= MAX_CLIPBOARD_BYTES) {
+                return new String(payload, StandardCharsets.UTF_8);
+            }
+            int start = payload.length - MAX_CLIPBOARD_BYTES;
+            while (start < payload.length && payload[start] != '\n') start++;
+            if (start < payload.length) start++;
+            return "[Начало журнала пропущено: в буфер помещены последние 256 КиБ]\n"
+                + new String(payload, start, payload.length - start, StandardCharsets.UTF_8);
+        }
     }
 
     private static void upload(Context context) {

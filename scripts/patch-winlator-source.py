@@ -91,8 +91,14 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         build_file,
         'versionName "11.1"',
-        'versionName "0.1.2-winlator-11.1"',
+        'versionName "0.1.3-preview.1-winlator-11.1"',
         "Android version name patch",
+    )
+    replace_once(
+        build_file,
+        "versionCode 28",
+        "versionCode 29",
+        "Android version code patch",
     )
     replace_once(
         build_file,
@@ -346,7 +352,9 @@ def patch_android_application(root: Path) -> None:
                 finishDataExpressSession(status,
                     status == 0
                         ? \"Последний сеанс DataExpress завершён нормально.\"
-                        : \"DataExpress завершился с ошибкой (код \" + status + \"). Подробности сохранены в диагностике.\");
+                        : status == 137
+                            ? \"DataExpress принудительно завершён (код 137 / SIGKILL). Обычно это нехватка памяти или системное завершение процесса. Подробности сохранены в диагностике.\"
+                            : \"DataExpress завершился с ошибкой (код \" + status + \"). Подробности сохранены в диагностике.\");
             });
         }
         else guestProgramLauncherComponent.setTerminationCallback((status) -> exit());

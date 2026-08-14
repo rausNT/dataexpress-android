@@ -51,6 +51,37 @@
             android:layout_marginTop="12dp"
             android:text="Выбрать базу с устройства / USB" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:text="Диагностика запуска"
+            android:textColor="#F8FAFC"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/shareDiagnosticsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Поделиться журналом…" />
+
+        <Button
+            android:id="@+id/saveDiagnosticsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Сохранить журнал в файл" />
+
+        <Button
+            android:id="@+id/copyDiagnosticsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Скопировать журнал" />
+
         <Button
             android:id="@+id/aboutProjectButton"
             android:layout_width="match_parent"
