@@ -94,7 +94,12 @@ public final class DataExpressDiagnostics {
             }
             Runtime runtime = Runtime.getRuntime();
             item.put("appMaxMemoryMb", runtime.maxMemory() / (1024 * 1024));
+            item.put("appAllocatedMemoryMb", runtime.totalMemory() / (1024 * 1024));
             item.put("appFreeMemoryMb", runtime.freeMemory() / (1024 * 1024));
+            item.put("appUsedMemoryMb",
+                (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024));
+            item.put("appHeadroomMemoryMb",
+                (runtime.maxMemory() - runtime.totalMemory() + runtime.freeMemory()) / (1024 * 1024));
             if (error != null) {
                 item.put("errorType", error.getClass().getName());
                 item.put("error", String.valueOf(error.getMessage()));

@@ -290,8 +290,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("com.dataexpr", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("versionCode 29", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("0.1.3-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("versionCode 30", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("0.1.4-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("zstd-jni:1.5.7-12", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
@@ -312,6 +312,11 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn("hasVisibleDataExpressWindow", xserver)
             self.assertIn("dataExpressSessionFinishing", xserver)
             self.assertIn("код 137 / SIGKILL", xserver)
+            self.assertIn("scheduleDataExpressWindowWatchdog", xserver)
+            self.assertIn('"dataexpress.window.timeout"', xserver)
+            self.assertIn("retryDataExpressCompatibility", xserver)
+            self.assertIn('envVars.put("WINEESYNC", compatibilityMode ? "0" : "1")', xserver)
+            self.assertIn('"x11.window.map"', xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressRuntimePaths.patchRuntime", launcher)
             app_utils = (root / "app/src/main/java/com/winlator/core/AppUtils.java").read_text(encoding="utf-8")
@@ -322,6 +327,14 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn("com.winlator.DataExpressHomeActivity", manifest)
             self.assertIn('android:exported="false"', manifest)
             self.assertIn("${applicationId}.FileProvider", manifest)
+
+    def test_diagnostics_report_real_heap_headroom(self):
+        diagnostics = (
+            REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressDiagnostics.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"appAllocatedMemoryMb"', diagnostics)
+        self.assertIn('"appUsedMemoryMb"', diagnostics)
+        self.assertIn('"appHeadroomMemoryMb"', diagnostics)
 
 
 if __name__ == "__main__":

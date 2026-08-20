@@ -91,13 +91,13 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         build_file,
         'versionName "11.1"',
-        'versionName "0.1.3-preview.1-winlator-11.1"',
+        'versionName "0.1.4-preview.1-winlator-11.1"',
         "Android version name patch",
     )
     replace_once(
         build_file,
         "versionCode 28",
-        "versionCode 29",
+        "versionCode 30",
         "Android version code patch",
     )
     replace_once(
@@ -192,7 +192,9 @@ def patch_android_application(root: Path) -> None:
         "    private String screenEffectProfile;",
         "    private String screenEffectProfile;\n"
         "    private boolean dataExpressWindowSeen;\n"
-        "    private boolean dataExpressSessionFinishing;",
+        "    private boolean dataExpressSessionFinishing;\n"
+        "    private boolean dataExpressWindowWatchdogOffered;\n"
+        "    private int dataExpressMappedWindowCount;",
         "DataExpress window lifecycle fields",
     )
     exit_old = """    private void exit() {
@@ -255,6 +257,7 @@ def patch_android_application(root: Path) -> None:
                 DataExpressDiagnostics.record(this, "xserver.environment.start", null, null);
                 setupXEnvironment();
                 DataExpressDiagnostics.record(this, "xserver.environment.ready", null, null);
+                scheduleDataExpressWindowWatchdog();
                 DataExpressDiagnostics.flush(this);
             }
             catch (Throwable error) {
@@ -277,8 +280,20 @@ def patch_android_application(root: Path) -> None:
                 if (!flags[0] && window.isRenderable() && !window.getClassName().isEmpty()) {""",
         """            @Override
             public void onMapWindow(Window window) {
-                if (isDataExpressMode() && isDataExpressWindow(window)) {
-                    dataExpressWindowSeen = true;
+                if (isDataExpressMode() && window.isRenderable()
+                    && !window.getClassName().isEmpty()) {
+                    if (dataExpressMappedWindowCount < 12) {
+                        DataExpressDiagnostics.record(XServerDisplayActivity.this, "x11.window.map",
+                            "class=" + window.getClassName()
+                                + "; index=" + dataExpressMappedWindowCount,
+                            null);
+                    }
+                    dataExpressMappedWindowCount++;
+                    if (isDataExpressWindow(window)) {
+                        dataExpressWindowSeen = true;
+                        DataExpressDiagnostics.record(XServerDisplayActivity.this, "dataexpress.window.ready",
+                            "mappedWindows=" + dataExpressMappedWindowCount, null);
+                    }
                 }
                 if (!flags[0] && window.isRenderable() && !window.getClassName().isEmpty()) {""",
         "DataExpress window map tracking",
@@ -336,6 +351,13 @@ def patch_android_application(root: Path) -> None:
         """            envVars.putAll(container.getEnvVars());
             if (getIntent().getBooleanExtra("dataexpress_mode", false)) {
                 envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock");
+                boolean compatibilityMode = getIntent().getBooleanExtra(
+                    "dataexpress_compatibility_mode", false);
+                envVars.put("WINEESYNC", compatibilityMode ? "0" : "1");
+                DataExpressDiagnostics.record(this, "wine.compatibility",
+                    "esync=" + (compatibilityMode ? "0" : "1")
+                        + "; screen=" + xServer.screenInfo,
+                    null);
             }
             if (shortcut != null) envVars.putAll(shortcut.getExtra("envVars"));""",
         "DataExpress private Firebird lock directory",
@@ -353,7 +375,7 @@ def patch_android_application(root: Path) -> None:
                     status == 0
                         ? \"Последний сеанс DataExpress завершён нормально.\"
                         : status == 137
-                            ? \"DataExpress принудительно завершён (код 137 / SIGKILL). Обычно это нехватка памяти или системное завершение процесса. Подробности сохранены в диагностике.\"
+                            ? \"X-сессия DataExpress завершена (код 137 / SIGKILL). Код часто появляется после принудительного закрытия чёрного экрана и сам по себе не доказывает нехватку памяти. Подробности сохранены в диагностике.\"
                             : \"DataExpress завершился с ошибкой (код \" + status + \"). Подробности сохранены в диагностике.\");
             });
         }
@@ -379,6 +401,54 @@ def patch_android_application(root: Path) -> None:
             if (hasVisibleDataExpressWindow(child)) return true;
         }
         return false;
+    }
+
+    private void scheduleDataExpressWindowWatchdog() {
+        if (!isDataExpressMode()) return;
+        runOnUiThread(() -> xServerView.postDelayed(() -> {
+            if (dataExpressSessionFinishing || dataExpressWindowSeen
+                || dataExpressWindowWatchdogOffered || isFinishing()) return;
+            dataExpressWindowWatchdogOffered = true;
+            boolean compatibilityMode = getIntent().getBooleanExtra(
+                \"dataexpress_compatibility_mode\", false);
+            DataExpressDiagnostics.record(this, \"dataexpress.window.timeout\",
+                \"afterMs=20000; compatibility=\" + compatibilityMode
+                    + \"; mappedWindows=\" + dataExpressMappedWindowCount,
+                null);
+            DataExpressDiagnostics.flush(this);
+            android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle(\"Окно DataExpress не появилось\")
+                .setMessage(compatibilityMode
+                    ? \"Совместимый режим также не показал окно. Можно продолжить ожидание или вернуться на стартовый экран и отправить журнал.\"
+                    : \"Wine запущен, но окно DataExpress не появилось за 20 секунд. Повторить запуск без esync и с разрешением 1280×800?\")
+                .setNegativeButton(\"Продолжить ожидание\", null);
+            if (compatibilityMode) {
+                dialog.setPositiveButton(\"На стартовый экран\", (value, which) ->
+                    finishDataExpressSession(124,
+                        \"Окно DataExpress не появилось даже в совместимом режиме. Отправьте диагностический журнал.\"));
+            }
+            else {
+                dialog.setPositiveButton(\"Повторить совместимо\", (value, which) ->
+                    retryDataExpressCompatibility());
+            }
+            dialog.show();
+        }, 20000));
+    }
+
+    private synchronized void retryDataExpressCompatibility() {
+        if (dataExpressSessionFinishing) return;
+        dataExpressSessionFinishing = true;
+        getIntent().putExtra(\"dataexpress_compatibility_mode\", true);
+        if (container != null && !\"1280x800\".equals(container.getScreenSize())) {
+            container.setScreenSize(\"1280x800\");
+            container.saveData();
+        }
+        DataExpressDiagnostics.record(this, \"dataexpress.compatibility.retry\",
+            \"esync=0; screen=1280x800\", null);
+        DataExpressDiagnostics.flush(this);
+        winHandler.stop();
+        if (environment != null) environment.stopEnvironmentComponents();
+        runOnUiThread(this::recreate);
     }
 
     private synchronized void finishDataExpressSession(int status, String message) {
