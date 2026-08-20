@@ -136,11 +136,11 @@ public final class DataExpressBootstrap {
     }
 
     private static void stageAndLaunch(MainActivity activity, Container container, Uri sourceUri) {
-        if (container.getStartupSelection() != Container.STARTUP_SELECTION_NORMAL) {
-            container.setStartupSelection(Container.STARTUP_SELECTION_NORMAL);
+        if (container.getStartupSelection() != Container.STARTUP_SELECTION_ESSENTIAL) {
+            container.setStartupSelection(Container.STARTUP_SELECTION_ESSENTIAL);
             container.saveData();
             DataExpressDiagnostics.record(activity, "container.services",
-                "startupSelection=normal", null);
+                "startupSelection=essential", null);
         }
         DataExpressDiagnostics.record(activity, "database.stage.start",
             sourceUri == null ? "embedded-demo" : "external:" + shortHash(sourceUri.toString()), null);
@@ -152,17 +152,11 @@ public final class DataExpressBootstrap {
                 File database;
                 if (sourceUri == null) {
                     File demoDir = new File(applicationDir, "databases/demo");
-                    // The bundled training database is a regular Firebird database.
-                    // Its extension must remain .FDB: DataExpress uses .DXDB to select
-                    // a different Firebird 5 connection path.
-                    database = new File(demoDir, "DEMO_DB.FDB");
+                    // The bundled database is ODS 13 and therefore must keep the
+                    // .DXDB extension that selects the bundled Firebird 5 engine.
+                    database = new File(demoDir, "DEMO_DB.DXDB");
                     if (!database.isFile()) {
                         unzipAsset(activity, ASSET_DEMO, demoDir);
-                        File packagedName = new File(demoDir, "DEMO_DB.DXDB");
-                        if (!database.isFile() && packagedName.isFile()
-                            && !packagedName.renameTo(database)) {
-                            throw new IOException("Cannot rename bundled demo database to " + database);
-                        }
                     }
                 }
                 else {
@@ -249,17 +243,19 @@ public final class DataExpressBootstrap {
         int displayWidth = Math.max(metrics.widthPixels, metrics.heightPixels);
         int displayHeight = Math.min(metrics.widthPixels, metrics.heightPixels);
 
-        int virtualHeight = Math.max(640, Math.min(800, displayHeight));
-        virtualHeight = roundToMultiple(virtualHeight, 16);
-        double aspect = displayHeight > 0 ? (double)displayWidth / displayHeight : 1.6d;
-        int virtualWidth = roundToMultiple((int)Math.round(virtualHeight * aspect), 16);
-        virtualWidth = Math.max(1024, Math.min(1920, virtualWidth));
-        String screenSize = virtualWidth + "x" + virtualHeight;
-
-        if (!screenSize.equals(container.getScreenSize())) {
-            container.setScreenSize(screenSize);
-            container.saveData();
-        }
+        // This is the exact profile verified on a real Huawei TXZ-W09 with
+        // upstream Winlator 11.1.  The previous virgl/wined3d profile started
+        // Wine but DataExpress.exe exited before mapping its first window.
+        String screenSize = "1280x720";
+        container.setScreenSize(screenSize);
+        container.setGraphicsDriver("vortek,gladio");
+        container.setDXWrapper("dxvk");
+        container.setWinComponents(
+            "direct3d=1,directsound=1,directmusic=1,directshow=0,directplay=0," +
+            "xaudio=1,vcrun2005=0,vcrun2010=1,wmdecoder=1");
+        container.setBox64Preset("INTERMEDIATE");
+        container.setStartupSelection(Container.STARTUP_SELECTION_ESSENTIAL);
+        container.saveData();
 
         File config = new File(applicationDir, "dataexpress.cfg");
         if (config.isFile()) {
@@ -279,7 +275,8 @@ public final class DataExpressBootstrap {
         }
 
         DataExpressDiagnostics.record(activity, "display.configure",
-            "android=" + displayWidth + "x" + displayHeight + ", wine=" + screenSize, null);
+            "android=" + displayWidth + "x" + displayHeight + ", wine=" + screenSize
+                + ", graphics=vortek+gladio, dxwrapper=dxvk, box64=INTERMEDIATE", null);
     }
 
     private static int roundToMultiple(int value, int multiple) {

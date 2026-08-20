@@ -189,6 +189,13 @@ jobs:
           unzip -l "$APK" | grep -F 'assets/dataexpress/manifest.json'
           unzip -l "$APK" | grep -F 'assets/dataexpress/demo-database.zip'
           unzip -l "$APK" | grep -F 'lib/arm64-v8a/libc++_shared.so'
+          unzip -l "$APK" | grep -F 'lib/arm64-v8a/libbox64.so'
+          unzip -p "$APK" 'lib/arm64-v8a/libbox64.so' > /tmp/libbox64.so
+          strings /tmp/libbox64.so | grep -Fq '/data/data/com.dataexpr/files/rootfs/lib/ld-linux-aarch64.so.1'
+          if strings /tmp/libbox64.so | grep -Fq '/data/data/com.winlator/'; then
+            echo 'Box64 still contains the upstream package path' >&2
+            exit 1
+          fi
           unzip -p "$APK" 'lib/arm64-v8a/libzstd-jni-1.5.7-12.so' > /tmp/libzstd-jni.so
           readelf -lW /tmp/libzstd-jni.so | awk '
             / LOAD / { found=1; if ($NF != "0x4000") exit 1 }
@@ -205,8 +212,8 @@ jobs:
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee dist/APK-BADGING.txt
           grep -Fq "package: name='com.dataexpr'" dist/APK-BADGING.txt
-          grep -Fq "versionCode='30'" dist/APK-BADGING.txt
-          grep -Fq "versionName='0.1.4-preview.1-winlator-11.1'" dist/APK-BADGING.txt
+          grep -Fq "versionCode='31'" dist/APK-BADGING.txt
+          grep -Fq "versionName='0.1.5-preview.1-winlator-11.1'" dist/APK-BADGING.txt
           grep -Fq "application-label:'DataExpress Android'" dist/APK-BADGING.txt
           grep -Fq "application-label-ru:'DataExpress Android'" dist/APK-BADGING.txt
 

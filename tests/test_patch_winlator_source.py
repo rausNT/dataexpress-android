@@ -1,5 +1,7 @@
 import importlib.util
+import io
 import json
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +42,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressBootstrap.java"
         ).read_text(encoding="utf-8")
         self.assertIn('return lower.endsWith(".fdb") ? "database.FDB" : "database.DXDB";', bootstrap)
+        self.assertIn('database = new File(demoDir, "DEMO_DB.DXDB");', bootstrap)
+        self.assertNotIn("packagedName.renameTo(database)", bootstrap)
         self.assertIn('"database.runtime.select"', bootstrap)
         self.assertIn('"Firebird 2.5" : "Firebird 5"', bootstrap)
         self.assertIn("applyFirebirdWineCompatibility(activity, applicationDir);", bootstrap)
@@ -82,11 +86,15 @@ class PatchWinlatorSourceTest(unittest.TestCase):
         profile = json.loads(
             (REPO_ROOT / "overlay/app/src/main/assets/dataexpress/profile.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(profile["startupSelection"], 0)
+        self.assertEqual(profile["startupSelection"], 1)
+        self.assertEqual(profile["screenSize"], "1280x720")
+        self.assertEqual(profile["graphicsDriver"], "vortek,gladio")
+        self.assertEqual(profile["dxwrapper"], "dxvk")
+        self.assertEqual(profile["box64Preset"], "INTERMEDIATE")
         bootstrap = (
             REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressBootstrap.java"
         ).read_text(encoding="utf-8")
-        self.assertIn("Container.STARTUP_SELECTION_NORMAL", bootstrap)
+        self.assertIn("Container.STARTUP_SELECTION_ESSENTIAL", bootstrap)
 
     def test_patches_native_targets_for_16k_pages(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -231,6 +239,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             setupXEnvironment();
         });
 
+        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");
+
         boolean enableLogs = preferences.getBoolean("enable_wine_debug", false) || preferences.getInt("box64_logs", 0) >= 1;
         if (enableLogs) ProcessHelper.addDebugCallback(debugDialog = new DebugDialog(this));
 
@@ -253,10 +263,15 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                 "app/src/main/java/com/winlator/core/FileUtils.java": (
                     'FileProvider.getUriForFile(activity, "com.winlator.FileProvider", file);\n'
                 ),
+                "app/src/main/java/com/winlator/core/ProcessHelper.java": (
+                    "        catch (Exception e) {}\n"
+                    "        return pid;\n"
+                ),
                 "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java": (
                     "import com.winlator.box64.Box64Preset;\n"
                     "            extractBox64File();\n"
                     "            copyDefaultBox64RCFile();\n"
+                    '        String command = rootDir+"/usr/local/bin/box64 "+guestExecutable;\n'
                 ),
                 "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java": """import com.winlator.MainActivity;
         Executors.newSingleThreadExecutor().execute(() -> {
@@ -290,8 +305,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("com.dataexpr", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("versionCode 30", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("0.1.4-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("versionCode 31", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("0.1.5-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("zstd-jni:1.5.7-12", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
@@ -307,6 +322,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('"xserver.setup.failure"', xserver)
             self.assertIn("DataExpressProcessTrace::onLine", xserver)
             self.assertIn("DataExpressProcessTrace.finish(this, status)", xserver)
+            self.assertIn('envVars.put("WINEDEBUG", "+seh,+module,+process")', xserver)
+            self.assertIn('DataExpressProcessTrace.snapshot(this, "window-timeout")', xserver)
             self.assertIn("DataExpressBootstrap.stopWineProcesses(this)", xserver)
             self.assertIn('envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock")', xserver)
             self.assertIn("hasVisibleDataExpressWindow", xserver)
@@ -319,14 +336,36 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('"x11.window.map"', xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressRuntimePaths.patchRuntime", launcher)
+            self.assertIn('nativeLibraryDir, "libbox64.so"', launcher)
+            self.assertIn("packagedBox64.canExecute()", launcher)
             app_utils = (root / "app/src/main/java/com/winlator/core/AppUtils.java").read_text(encoding="utf-8")
             self.assertIn("/data/data/com.dataexpr/storage", app_utils)
+            process_helper = (root / "app/src/main/java/com/winlator/core/ProcessHelper.java").read_text(encoding="utf-8")
+            self.assertIn("ProcessHelper.exec failed", process_helper)
             manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
             self.assertIn("android.intent.action.VIEW", manifest)
             self.assertIn("@xml/dataexpress_shortcuts", manifest)
             self.assertIn("com.winlator.DataExpressHomeActivity", manifest)
             self.assertIn('android:exported="false"', manifest)
             self.assertIn("${applicationId}.FileProvider", manifest)
+
+    def test_packages_box64_in_native_library_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / "app/src/main/assets/box64/box64-0.4.0.tzst"
+            archive.parent.mkdir(parents=True)
+            payload = b"/data/data/com.winlator/files/rootfs/lib/ld-linux-aarch64.so.1"
+            with tarfile.open(archive, "w") as bundle:
+                info = tarfile.TarInfo("usr/local/bin/box64")
+                info.size = len(payload)
+                info.mode = 0o755
+                bundle.addfile(info, io.BytesIO(payload))
+
+            packaged = MODULE.package_box64_as_native_executable(root)
+
+            self.assertEqual(packaged.name, "libbox64.so")
+            self.assertNotIn(b"com.winlator", packaged.read_bytes())
+            self.assertIn(b"com.dataexpr", packaged.read_bytes())
 
     def test_diagnostics_report_real_heap_headroom(self):
         diagnostics = (

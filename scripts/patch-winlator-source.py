@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -91,13 +93,13 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         build_file,
         'versionName "11.1"',
-        'versionName "0.1.4-preview.1-winlator-11.1"',
+        'versionName "0.1.5-preview.1-winlator-11.1"',
         "Android version name patch",
     )
     replace_once(
         build_file,
         "versionCode 28",
-        "versionCode 30",
+        "versionCode 31",
         "Android version code patch",
     )
     replace_once(
@@ -334,6 +336,18 @@ def patch_android_application(root: Path) -> None:
 
     replace_once(
         xserver,
+        '''        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");''',
+        '''        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");
+        if (getIntent().getBooleanExtra("dataexpress_mode", false)) {
+            envVars.put("WINEDEBUG", "+seh,+module,+process");
+            DataExpressDiagnostics.record(this, "wine.debug.enabled",
+                "channels=seh,module,process", null);
+        }''',
+        "DataExpress selective Wine diagnostics",
+    )
+
+    replace_once(
+        xserver,
         """            String guestExecutable = \"wine explorer /desktop=\"+desktopName+\",\"+xServer.screenInfo+\" \"+getWineStartCommand();
             guestProgramLauncherComponent.setGuestExecutable(guestExecutable);""",
         """            String guestExecutable = \"wine explorer /desktop=\"+desktopName+\",\"+xServer.screenInfo+\" \"+getWineStartCommand();
@@ -415,6 +429,7 @@ def patch_android_application(root: Path) -> None:
                 \"afterMs=20000; compatibility=\" + compatibilityMode
                     + \"; mappedWindows=\" + dataExpressMappedWindowCount,
                 null);
+            DataExpressProcessTrace.snapshot(this, \"window-timeout\");
             DataExpressDiagnostics.flush(this);
             android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle(\"Окно DataExpress не появилось\")
@@ -476,6 +491,35 @@ def patch_android_application(root: Path) -> None:
         "            extractBox64File();\n            copyDefaultBox64RCFile();",
         "            extractBox64File();\n            DataExpressRuntimePaths.patchRuntime(environment.getContext(), environment.getRootFS());\n            copyDefaultBox64RCFile();",
         "Box64 interpreter path patch",
+    )
+    replace_once(
+        launcher,
+        '        String command = rootDir+"/usr/local/bin/box64 "+guestExecutable;',
+        '''        Context context = environment.getContext();
+        File packagedBox64 = new File(context.getApplicationInfo().nativeLibraryDir, "libbox64.so");
+        File extractedBox64 = new File(rootDir, "/usr/local/bin/box64");
+        String box64Executable = packagedBox64.canExecute()
+            ? packagedBox64.getAbsolutePath()
+            : extractedBox64.getAbsolutePath();
+        String command = box64Executable+" "+guestExecutable;''',
+        "execute packaged Box64 from Android native library directory",
+    )
+
+    process_helper = root / "app/src/main/java/com/winlator/core/ProcessHelper.java"
+    replace_once(
+        process_helper,
+        """        catch (Exception e) {}
+        return pid;""",
+        """        catch (Exception e) {
+            String message = "ProcessHelper.exec failed: " + e.getClass().getSimpleName()
+                + (e.getMessage() == null ? "" : ": " + e.getMessage());
+            synchronized (debugCallbacks) {
+                for (Callback<String> callback : debugCallbacks) callback.call(message);
+            }
+            if (terminationCallback != null) terminationCallback.call(-1);
+        }
+        return pid;""",
+        "report guest process launch failures",
     )
 
     manifest = root / "app/src/main/AndroidManifest.xml"
@@ -591,6 +635,34 @@ def relocate_imported_jni_libraries(root: Path) -> list[str]:
     return imported
 
 
+def package_box64_as_native_executable(root: Path) -> Path:
+    """Place Box64 in Android's executable native-library directory."""
+
+    archives = sorted((root / "app/src/main/assets/box64").glob("box64-*.tzst"))
+    if len(archives) != 1:
+        raise RuntimeError(f"Expected exactly one Box64 archive, found {len(archives)}")
+
+    destination = root / "app/src/main/jniLibs/arm64-v8a/libbox64.so"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as temporary:
+        subprocess.run(
+            ["tar", "-xf", str(archives[0]), "-C", temporary],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        executable = Path(temporary) / "usr/local/bin/box64"
+        if not executable.is_file():
+            raise RuntimeError(f"Box64 executable not found in {archives[0]}")
+        payload = executable.read_bytes()
+        old_package = UPSTREAM_APPLICATION_ID.encode("ascii")
+        new_package = DATAEXPRESS_APPLICATION_ID.encode("ascii")
+        if old_package not in payload:
+            raise RuntimeError(f"Upstream package path not found in {archives[0]}")
+        destination.write_bytes(payload.replace(old_package, new_package))
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path, help="checked-out winlator-app source tree")
@@ -603,8 +675,10 @@ def main() -> int:
     patch_native_sources(root)
     patch_android_application(root)
     moved = relocate_imported_jni_libraries(root)
+    packaged_box64 = package_box64_as_native_executable(root)
     print(f"Patched Winlator source: {root}")
     print(f"Relocated {len(moved)} CMake-imported JNI libraries")
+    print(f"Packaged Box64 native executable: {packaged_box64}")
     return 0
 
 

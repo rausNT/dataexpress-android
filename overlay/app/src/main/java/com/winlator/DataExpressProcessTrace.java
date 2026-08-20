@@ -38,9 +38,12 @@ public final class DataExpressProcessTrace {
         if (lower.contains("80000100")
             || lower.contains("c0000096")
             || lower.contains("privileged instruction")
+            || lower.contains("unhandled exception")
+            || lower.contains("exception code=")
             || lower.contains("dispatch_exception code=")
             || lower.contains("unimplemented function")
             || lower.contains("wine: call from")
+            || lower.contains("err:")
             || lower.contains("failed to load")
             || lower.contains("out of memory")
             || lower.contains("oom")
@@ -52,7 +55,24 @@ public final class DataExpressProcessTrace {
         }
     }
 
+    public static synchronized void snapshot(Context context, String reason) {
+        String output = renderOutput();
+        String detail = "reason=" + reason + "; command=" + command + "; output="
+            + (output.isEmpty() ? "<no Wine output>" : output);
+        DataExpressDiagnostics.record(context, "wine.snapshot", detail, null);
+        DataExpressDiagnostics.flush(context);
+    }
+
     public static synchronized String finish(Context context, int status) {
+        String output = renderOutput();
+        String detail = "status=" + status + "; command=" + command + "; output=" + output;
+        DataExpressDiagnostics.record(context, "wine.terminated", detail, null);
+        DataExpressDiagnostics.flush(context);
+        if (output.length() == 0) output = "Box64/Wine не передал диагностический вывод.";
+        return "Код завершения: " + status + "\n\n" + output;
+    }
+
+    private static String renderOutput() {
         StringBuilder output = new StringBuilder();
         if (!SIGNAL_LINES.isEmpty()) {
             output.append("Relevant Wine diagnostics:");
@@ -63,10 +83,6 @@ public final class DataExpressProcessTrace {
             if (output.length() > 0) output.append('\n');
             output.append(line);
         }
-        String detail = "status=" + status + "; command=" + command + "; output=" + output;
-        DataExpressDiagnostics.record(context, "wine.terminated", detail, null);
-        DataExpressDiagnostics.flush(context);
-        if (output.length() == 0) output.append("Box64/Wine не передал диагностический вывод.");
-        return "Код завершения: " + status + "\n\n" + output;
+        return output.toString();
     }
 }
