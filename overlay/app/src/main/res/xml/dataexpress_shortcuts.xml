@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="open_database"
+        android:enabled="true"
+        android:icon="@drawable/ic_dataexpress_database"
+        android:shortcutShortLabel="@string/dataexpress_open_database"
+        android:shortcutLongLabel="@string/dataexpress_open_database"
+        android:shortcutDisabledMessage="@string/dataexpress_open_database_disabled">
+        <intent
+            android:action="ru.mydataexpress.android.action.OPEN_DATABASE"
+            android:targetPackage="com.dataexpr"
+            android:targetClass="com.winlator.DataExpressHomeActivity" />
+    </shortcut>
+</shortcuts>

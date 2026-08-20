@@ -11,6 +11,28 @@
 
 Поэтому первая целевая сборка — Win32 `DataExpress.exe`. На ARM64 Android она будет запускаться через Wine WoW64 и Box86/Box64.
 
+## Проверенная локальная сборка
+
+Сборка от 5 августа 2026 года проверена на официальном установщике Lazarus 4.6 / FPC 3.2.2 Win32:
+
+- файл `lazarus-4.6-fpc-3.2.2-win32.exe`;
+- SHA-256 `0BCFDDE9D533058F3B730034C4575B4412821F2117CBA77D078EEE41836AF10A`;
+- Authenticode-подпись `Stichting Programming Free Pascal & Lazarus Foundation`;
+- portable-распаковка выполнена `innoextract` 1.9;
+- `fpc.cfg` при необходимости создаёт сам `scripts/build-dataexpress-windows.ps1` через штатный `fpcmkcfg.exe`.
+
+Перед сборкой к закреплённому commit `89523b3125a5bda55aa7aca7232c8773913fed99`
+нужно применить `patches/dataexpress/legacy-xml-reader.patch`:
+
+```powershell
+git -C C:\src\dataexpress apply C:\src\dataexpress-android\patches\dataexpress\legacy-xml-reader.patch
+```
+
+Патч исправляет потерю DataExpress-выражений `[!…]`, `[?!…]` и `[?…]` при SAX-загрузке
+старого XML из DXDB. Исправление проверено на оригинальной `СОТ.DXDB`: запросы
+`_Контроль обучения` и `_Напоминания по всем модулям` загрузились без ошибки
+`Поле источника [] не найдено`.
+
 ## Этапы CI
 
 1. Закрепить commit SHA `dxbit/dataexpress` и `dxbit/dataexpress-depend`.
@@ -23,11 +45,11 @@
 8. Запустить `scripts/verify-runtime-payload.py`.
 9. Опубликовать ZIP и manifest как CI artifact.
 
-## Почему toolchain пока не загружается автоматически
+## Почему toolchain не загружается автоматически
 
 Lazarus 4.5 и FPC 3.2.3 указаны upstream-проектом, но CI должен получать их из проверяемого источника с фиксированным хешем. Слепая загрузка «последней версии» fpcupdeluxe сделает сборку невоспроизводимой и создаст риск supply-chain.
 
-Перед включением полноценной workflow необходимо зафиксировать:
+Перед включением полноценной workflow необходимо перенести уже проверенные параметры локальной сборки в CI:
 
 - URL или release toolchain;
 - SHA-256 установщика/архива;

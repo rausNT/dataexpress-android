@@ -15,6 +15,12 @@ DENIED_NAMES = {
     "padeguc.dll".casefold(),
 }
 REQUIRED_FILES = {"DataExpress.exe", "LICENSE.txt", "NOTICE.txt"}
+FIREBIRD_WINE_MODULES = {
+    "fb5/fbclient.dll": (1827840, "4869f96ee2faae94b883c05a81ebe9b573b5465788d0109815ec900c53d605f2"),
+    "fb5/intl/fbintl.dll": (1067008, "8c92a8c742759c5b787e8ca16b840a7383e7b674f9261deca9bcc98fb886375b"),
+    "fb5/plugins/chacha.dll": (392704, "fbc16fc26155b6b3faa970285d6be69defea4ab024a8ebc5cb2ad4ae2a8de2e6"),
+    "fb5/plugins/engine13.dll": (8262656, "9c44d86174da80dfaaf86955e96e1c7beb2288ed17f4bba15e49bc4ae6e1d261"),
+}
 
 
 def sha256(path: Path) -> str:
@@ -47,9 +53,25 @@ def main() -> int:
         formatted = "\n".join(str(path.relative_to(root)) for path in denied)
         raise SystemExit(f"Denied proprietary/unchecked files found:\n{formatted}")
 
+    invalid_firebird = []
+    for relative, (expected_size, expected_hash) in FIREBIRD_WINE_MODULES.items():
+        module = root / relative
+        if (
+            not module.is_file()
+            or module.stat().st_size != expected_size
+            or sha256(module) != expected_hash
+        ):
+            invalid_firebird.append(relative)
+    if invalid_firebird:
+        raise SystemExit(
+            "Payload does not contain the verified Firebird 5.0.3 Wine build: "
+            + ", ".join(invalid_firebird)
+        )
+
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "component": "DataExpress",
+        "archivePathStyle": "posix",
         "sourceRepository": "https://github.com/dxbit/dataexpress",
         "sourceRevision": args.source_revision,
         "files": [
