@@ -168,6 +168,22 @@ def patch_android_application(root: Path) -> None:
         "FileProvider authority patch",
     )
 
+    app_workarounds = root / "app/src/main/java/com/winlator/core/Win32AppWorkarounds.java"
+    replace_once(
+        app_workarounds,
+        '''            case "chronocross_launcher.exe":
+                return (WindowWorkaround) (window) -> {''',
+        '''            case "dataexpress.exe":
+                return (WindowWorkaround) (window) -> {
+                    final WinHandler winHandler = activity.getWinHandler();
+                    AppUtils.runDelayed(() ->
+                        winHandler.showWindow(window.getHandle(), WinEnums.SW_MAXIMIZE), 500);
+                };
+            case "chronocross_launcher.exe":
+                return (WindowWorkaround) (window) -> {''',
+        "maximize DataExpress main window",
+    )
+
     rootfs_installer = root / "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java"
     replace_once(
         rootfs_installer,

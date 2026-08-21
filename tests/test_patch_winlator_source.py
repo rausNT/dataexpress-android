@@ -95,6 +95,16 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             REPO_ROOT / "overlay/app/src/main/java/com/winlator/DataExpressBootstrap.java"
         ).read_text(encoding="utf-8")
         self.assertIn("Container.STARTUP_SELECTION_ESSENTIAL", bootstrap)
+        self.assertIn("selectWineScreenSize(displayWidth, displayHeight)", bootstrap)
+        self.assertIn('manufacturer.contains("huawei")', bootstrap)
+        self.assertIn('"status_bar_height", "dimen", "android"', bootstrap)
+        self.assertIn('displayHeight = Math.max(1, displayHeight - reservedSystemBar);', bootstrap)
+        self.assertIn('targetWidth = Math.max(1024, Math.min(1600, targetWidth));', bootstrap)
+        self.assertIn('.replaceAll("(?m)^FormWidth=\\\\d+", "FormWidth=" + wineWidth)', bootstrap)
+        self.assertIn('.replaceAll("(?m)^FormHeight=\\\\d+", "FormHeight=" + wineHeight)', bootstrap)
+        self.assertIn('.replaceAll("(?m)^FormLeft=-?\\\\d+", "FormLeft=0")', bootstrap)
+        self.assertIn('.replaceAll("(?m)^FormTop=-?\\\\d+", "FormTop=0")', bootstrap)
+        self.assertIn('.replaceAll("(?m)^FormState=\\\\d+", "FormState=0")', bootstrap)
 
     def test_patches_native_targets_for_16k_pages(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -263,6 +273,10 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                 "app/src/main/java/com/winlator/core/FileUtils.java": (
                     'FileProvider.getUriForFile(activity, "com.winlator.FileProvider", file);\n'
                 ),
+                "app/src/main/java/com/winlator/core/Win32AppWorkarounds.java": (
+                    '            case "chronocross_launcher.exe":\n'
+                    '                return (WindowWorkaround) (window) -> {\n'
+                ),
                 "app/src/main/java/com/winlator/core/ProcessHelper.java": (
                     "        catch (Exception e) {}\n"
                     "        return pid;\n"
@@ -340,6 +354,10 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn("packagedBox64.canExecute()", launcher)
             app_utils = (root / "app/src/main/java/com/winlator/core/AppUtils.java").read_text(encoding="utf-8")
             self.assertIn("/data/data/com.dataexpr/storage", app_utils)
+            workarounds = (root / "app/src/main/java/com/winlator/core/Win32AppWorkarounds.java").read_text(encoding="utf-8")
+            self.assertIn('case "dataexpress.exe":', workarounds)
+            self.assertIn("WinEnums.SW_MAXIMIZE", workarounds)
+            self.assertIn("winHandler.showWindow(window.getHandle()", workarounds)
             process_helper = (root / "app/src/main/java/com/winlator/core/ProcessHelper.java").read_text(encoding="utf-8")
             self.assertIn("ProcessHelper.exec failed", process_helper)
             manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")

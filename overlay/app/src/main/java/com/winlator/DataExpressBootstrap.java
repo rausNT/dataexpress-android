@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
@@ -243,10 +244,31 @@ public final class DataExpressBootstrap {
         int displayWidth = Math.max(metrics.widthPixels, metrics.heightPixels);
         int displayHeight = Math.min(metrics.widthPixels, metrics.heightPixels);
 
-        // This is the exact profile verified on a real Huawei TXZ-W09 with
-        // upstream Winlator 11.1.  The previous virgl/wined3d profile started
-        // Wine but DataExpress.exe exited before mapping its first window.
-        String screenSize = "1280x720";
+        // Huawei/Honor tablet desktop mode keeps its top system shelf visible
+        // even after reporting the status bar as hidden to WindowInsets.  Wine
+        // would otherwise use the physical 2456x1600 aspect ratio while the
+        // renderer actually receives 2456x1540, producing black side bars.
+        // Account for that vendor quirk without changing immersive rendering
+        // on phones where Android really hides the system bars.
+        int reservedSystemBar = 0;
+        String manufacturer = Build.MANUFACTURER == null
+            ? "" : Build.MANUFACTURER.toLowerCase(Locale.ROOT);
+        if (manufacturer.contains("huawei") || manufacturer.contains("honor")) {
+            int resourceId = activity.getResources().getIdentifier(
+                "status_bar_height", "dimen", "android");
+            if (resourceId > 0) {
+                reservedSystemBar = activity.getResources().getDimensionPixelSize(resourceId);
+                displayHeight = Math.max(1, displayHeight - reservedSystemBar);
+            }
+        }
+
+        // Keep roughly 720 logical pixels vertically, but derive the width from
+        // the real Android aspect ratio. This avoids letterboxing on tablets
+        // while keeping the Wine framebuffer small enough for older phones.
+        String screenSize = selectWineScreenSize(displayWidth, displayHeight);
+        String[] screenParts = screenSize.split("x", 2);
+        int wineWidth = Integer.parseInt(screenParts[0]);
+        int wineHeight = Integer.parseInt(screenParts[1]);
         container.setScreenSize(screenSize);
         container.setGraphicsDriver("vortek,gladio");
         container.setDXWrapper("dxvk");
@@ -265,7 +287,14 @@ public final class DataExpressBootstrap {
             }
             String text = buffer.toString("UTF-8");
             String updated = text
-                .replaceAll("(?m)^FormState=\\d+", "FormState=2")
+                // Wine does not consistently honour Lazarus wsMaximized. Set
+                // the saved normal geometry to the entire virtual desktop so
+                // DataExpress fills the Android screen on every launch.
+                .replaceAll("(?m)^FormWidth=\\d+", "FormWidth=" + wineWidth)
+                .replaceAll("(?m)^FormHeight=\\d+", "FormHeight=" + wineHeight)
+                .replaceAll("(?m)^FormLeft=-?\\d+", "FormLeft=0")
+                .replaceAll("(?m)^FormTop=-?\\d+", "FormTop=0")
+                .replaceAll("(?m)^FormState=\\d+", "FormState=0")
                 .replaceAll("(?m)^LogErrors=\\d+", "LogErrors=1");
             if (!updated.equals(text)) {
                 try (OutputStream output = new BufferedOutputStream(new FileOutputStream(config))) {
@@ -276,11 +305,22 @@ public final class DataExpressBootstrap {
 
         DataExpressDiagnostics.record(activity, "display.configure",
             "android=" + displayWidth + "x" + displayHeight + ", wine=" + screenSize
+                + ", reservedSystemBar=" + reservedSystemBar
                 + ", graphics=vortek+gladio, dxwrapper=dxvk, box64=INTERMEDIATE", null);
     }
 
     private static int roundToMultiple(int value, int multiple) {
         return Math.max(multiple, ((value + multiple / 2) / multiple) * multiple);
+    }
+
+    private static String selectWineScreenSize(int displayWidth, int displayHeight) {
+        int landscapeWidth = Math.max(displayWidth, displayHeight);
+        int landscapeHeight = Math.max(1, Math.min(displayWidth, displayHeight));
+        int targetHeight = 720;
+        int targetWidth = roundToMultiple(
+            (int)Math.round(targetHeight * (landscapeWidth / (double)landscapeHeight)), 8);
+        targetWidth = Math.max(1024, Math.min(1600, targetWidth));
+        return targetWidth + "x" + targetHeight;
     }
 
     private static void installPayloadIfNeeded(Context context, File applicationDir) throws Exception {
