@@ -207,6 +207,14 @@ def patch_android_application(root: Path) -> None:
     xserver = root / "app/src/main/java/com/winlator/XServerDisplayActivity.java"
     replace_once(
         xserver,
+        "        AppUtils.hideSystemUI(this);",
+        "        if (!getIntent().getBooleanExtra(\"dataexpress_mode\", false)) {\n"
+        "            AppUtils.hideSystemUI(this);\n"
+        "        }",
+        "stable DataExpress system-bar workspace",
+    )
+    replace_once(
+        xserver,
         "    private String screenEffectProfile;",
         "    private String screenEffectProfile;\n"
         "    private boolean dataExpressWindowSeen;\n"

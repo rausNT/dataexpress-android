@@ -5,12 +5,17 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Insets;
+import android.graphics.Point;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.util.DisplayMetrics;
+import android.view.WindowInsets;
+import android.view.WindowMetrics;
 import android.widget.Toast;
 
 import com.winlator.container.Container;
@@ -239,28 +244,42 @@ public final class DataExpressBootstrap {
 
     private static void configureDisplay(MainActivity activity, Container container,
                                          File applicationDir) throws IOException {
-        DisplayMetrics metrics = new DisplayMetrics();
-        activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
-        int displayWidth = Math.max(metrics.widthPixels, metrics.heightPixels);
-        int displayHeight = Math.min(metrics.widthPixels, metrics.heightPixels);
+        int physicalWidth;
+        int physicalHeight;
+        int workspaceWidth;
+        int workspaceHeight;
+        int insetLeft = 0;
+        int insetTop = 0;
+        int insetRight = 0;
+        int insetBottom = 0;
 
-        // Huawei/Honor tablet desktop mode keeps its top system shelf visible
-        // even after reporting the status bar as hidden to WindowInsets.  Wine
-        // would otherwise use the physical 2456x1600 aspect ratio while the
-        // renderer actually receives 2456x1540, producing black side bars.
-        // Account for that vendor quirk without changing immersive rendering
-        // on phones where Android really hides the system bars.
-        int reservedSystemBar = 0;
-        String manufacturer = Build.MANUFACTURER == null
-            ? "" : Build.MANUFACTURER.toLowerCase(Locale.ROOT);
-        if (manufacturer.contains("huawei") || manufacturer.contains("honor")) {
-            int resourceId = activity.getResources().getIdentifier(
-                "status_bar_height", "dimen", "android");
-            if (resourceId > 0) {
-                reservedSystemBar = activity.getResources().getDimensionPixelSize(resourceId);
-                displayHeight = Math.max(1, displayHeight - reservedSystemBar);
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowMetrics metrics = activity.getWindowManager().getCurrentWindowMetrics();
+            Rect bounds = metrics.getBounds();
+            Insets insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            physicalWidth = bounds.width();
+            physicalHeight = bounds.height();
+            insetLeft = insets.left;
+            insetTop = insets.top;
+            insetRight = insets.right;
+            insetBottom = insets.bottom;
+            workspaceWidth = Math.max(1, physicalWidth - insetLeft - insetRight);
+            workspaceHeight = Math.max(1, physicalHeight - insetTop - insetBottom);
         }
+        else {
+            DisplayMetrics realMetrics = new DisplayMetrics();
+            Point workspace = new Point();
+            activity.getWindowManager().getDefaultDisplay().getRealMetrics(realMetrics);
+            activity.getWindowManager().getDefaultDisplay().getSize(workspace);
+            physicalWidth = realMetrics.widthPixels;
+            physicalHeight = realMetrics.heightPixels;
+            workspaceWidth = Math.max(1, workspace.x);
+            workspaceHeight = Math.max(1, workspace.y);
+        }
+
+        int displayWidth = Math.max(workspaceWidth, workspaceHeight);
+        int displayHeight = Math.min(workspaceWidth, workspaceHeight);
 
         // Keep roughly 720 logical pixels vertically, but derive the width from
         // the real Android aspect ratio. This avoids letterboxing on tablets
@@ -304,8 +323,10 @@ public final class DataExpressBootstrap {
         }
 
         DataExpressDiagnostics.record(activity, "display.configure",
-            "android=" + displayWidth + "x" + displayHeight + ", wine=" + screenSize
-                + ", reservedSystemBar=" + reservedSystemBar
+            "physical=" + physicalWidth + "x" + physicalHeight
+                + ", workspace=" + workspaceWidth + "x" + workspaceHeight
+                + ", insets=" + insetLeft + "/" + insetTop + "/"
+                + insetRight + "/" + insetBottom + ", wine=" + screenSize
                 + ", graphics=vortek+gladio, dxwrapper=dxvk, box64=INTERMEDIATE", null);
     }
 
