@@ -96,9 +96,11 @@ class PatchWinlatorSourceTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("Container.STARTUP_SELECTION_ESSENTIAL", bootstrap)
         self.assertIn("selectWineScreenSize(displayWidth, displayHeight)", bootstrap)
-        self.assertIn('manufacturer.contains("huawei")', bootstrap)
-        self.assertIn('"status_bar_height", "dimen", "android"', bootstrap)
-        self.assertIn('displayHeight = Math.max(1, displayHeight - reservedSystemBar);', bootstrap)
+        self.assertIn("getCurrentWindowMetrics()", bootstrap)
+        self.assertIn("getInsetsIgnoringVisibility", bootstrap)
+        self.assertIn("WindowInsets.Type.systemBars()", bootstrap)
+        self.assertIn("WindowInsets.Type.displayCutout()", bootstrap)
+        self.assertIn("getDefaultDisplay().getSize(workspace)", bootstrap)
         self.assertIn('targetWidth = Math.max(1024, Math.min(1600, targetWidth));', bootstrap)
         self.assertIn('.replaceAll("(?m)^FormWidth=\\\\d+", "FormWidth=" + wineWidth)', bootstrap)
         self.assertIn('.replaceAll("(?m)^FormHeight=\\\\d+", "FormHeight=" + wineHeight)', bootstrap)
@@ -205,7 +207,9 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                     "    }\n"
                     "if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {\n"
                 ),
-                "app/src/main/java/com/winlator/XServerDisplayActivity.java": """    private String screenEffectProfile;
+                "app/src/main/java/com/winlator/XServerDisplayActivity.java": """        AppUtils.hideSystemUI(this);
+
+    private String screenEffectProfile;
 
         xServer.windowManager.addOnWindowModificationListener(new WindowManager.OnWindowModificationListener() {
             @Override
@@ -331,6 +335,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             rootfs = (root / "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java").read_text(encoding="utf-8")
             self.assertIn("catch (Throwable error)", rootfs)
             xserver = (root / "app/src/main/java/com/winlator/XServerDisplayActivity.java").read_text(encoding="utf-8")
+            self.assertIn('if (!getIntent().getBooleanExtra("dataexpress_mode", false))', xserver)
             self.assertIn("DataExpressBootstrap.finishAndSync(this);", xserver)
             self.assertIn('getStringExtra("exec_args")', xserver)
             self.assertIn('"xserver.setup.failure"', xserver)
