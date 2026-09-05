@@ -18,40 +18,52 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Restore and adapt for Huawei
+      - name: Restore and make max-compatible Huawei build
         run: |
           cat bukvar-build/src.part* | base64 -d > /tmp/bukvar-src.tar.xz
           tar -xJf /tmp/bukvar-src.tar.xz
           python3 - <<'PY'
           from pathlib import Path
           g=Path('bukvar-android/app/build.gradle')
-          s=g.read_text().replace('compileSdk 36','compileSdk 35').replace('targetSdk 36','targetSdk 35').replace('minSdk 26','minSdk 23').replace('versionCode 1','versionCode 2').replace("versionName '0.3.0'", "versionName '0.3.1-huawei'")
+          s=g.read_text()
+          s=s.replace('compileSdk 36','compileSdk 35')
+          s=s.replace('minSdk 26','minSdk 21')
+          s=s.replace('targetSdk 36','targetSdk 28')
+          s=s.replace('versionCode 1','versionCode 3')
+          s=s.replace("versionName '0.3.0'", "versionName '0.3.2-huawei-compat'")
+          s=s.replace("    buildTypes {", "    signingConfigs {\n        debug {\n            enableV1Signing = true\n            enableV2Signing = true\n            enableV3Signing = false\n            enableV4Signing = false\n        }\n    }\n    buildTypes {")
           g.write_text(s)
           p=Path('bukvar-android/app/src/main/java/ru/ratunov/bukvar/MainActivity.java')
           s=p.read_text()
           old='''        w.setStatusBarColor(Color.TRANSPARENT);\n        w.setNavigationBarColor(Color.TRANSPARENT);\n        if (Build.VERSION.SDK_INT >= 30) {'''
           new='''        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();\n        String brand = Build.BRAND == null ? "" : Build.BRAND.toLowerCase();\n        boolean huawei = maker.contains("huawei") || maker.contains("honor") || brand.contains("huawei") || brand.contains("honor");\n        if (huawei && Build.VERSION.SDK_INT < 30) {\n            w.setStatusBarColor(Color.rgb(246, 244, 234));\n            w.setNavigationBarColor(Color.rgb(246, 244, 234));\n            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);\n            return;\n        }\n        w.setStatusBarColor(Color.TRANSPARENT);\n        w.setNavigationBarColor(Color.TRANSPARENT);\n        if (Build.VERSION.SDK_INT >= 30) {'''
-          if old not in s: raise SystemExit('patch anchor missing')
-          p.write_text(s.replace(old,new))
+          if old in s:
+              s=s.replace(old,new)
+          p.write_text(s)
+          print(g.read_text())
           PY
       - name: Build APKs
         working-directory: bukvar-android
         run: gradle :app:assembleDebug :app:assembleRelease --stacktrace
-      - name: Verify APK package and hashes
+      - name: Verify APK and signing
         run: |
           DEBUG=bukvar-android/app/build/outputs/apk/debug/app-debug.apk
           RELEASE=bukvar-android/app/build/outputs/apk/release/app-release.apk
           test -s "$DEBUG" && test -s "$RELEASE"
           AAPT="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" /usr/local/lib/android/sdk -type f -name aapt 2>/dev/null | sort -V | tail -n 1)"
-          "$AAPT" dump badging "$DEBUG" | head -n 3
+          APKSIGNER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" /usr/local/lib/android/sdk -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)"
+          "$AAPT" dump badging "$DEBUG" | head -n 4 | tee apk-badging-huawei.txt
+          "$APKSIGNER" verify --verbose --print-certs "$DEBUG" | tee apk-signing-huawei.txt
           sha256sum "$DEBUG" "$RELEASE" | tee apk-sha256-huawei.txt
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: bukvar-huawei-apk
+          name: bukvar-huawei-compat-apk
           path: |
             bukvar-android/app/build/outputs/apk/debug/app-debug.apk
             bukvar-android/app/build/outputs/apk/release/app-release.apk
+            apk-badging-huawei.txt
+            apk-signing-huawei.txt
             apk-sha256-huawei.txt
           if-no-files-found: error
           retention-days: 7
