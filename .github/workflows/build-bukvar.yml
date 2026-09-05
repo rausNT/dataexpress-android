@@ -1,0 +1,60 @@
+name: Build Bukvar APK
+
+on:
+  push:
+    branches: ["codex/bukvar-apk-build"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Restore Android project
+        run: |
+          cat bukvar-build/src.part* | base64 -d > /tmp/bukvar-src.tar.xz
+          tar -xJf /tmp/bukvar-src.tar.xz
+          test -f bukvar-android/app/src/main/assets/index.html
+          test -f bukvar-android/app/src/main/java/ru/ratunov/bukvar/MainActivity.java
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Build APKs
+        working-directory: bukvar-android
+        run: gradle :app:assembleDebug :app:assembleRelease --stacktrace
+
+      - name: Verify APK package and hashes
+        run: |
+          DEBUG=bukvar-android/app/build/outputs/apk/debug/app-debug.apk
+          RELEASE=bukvar-android/app/build/outputs/apk/release/app-release.apk
+          test -s "$DEBUG"
+          test -s "$RELEASE"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$DEBUG" | head -n 3
+          sha256sum "$DEBUG" "$RELEASE" | tee apk-sha256.txt
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bukvar-apk
+          path: |
+            bukvar-android/app/build/outputs/apk/debug/app-debug.apk
+            bukvar-android/app/build/outputs/apk/release/app-release.apk
+            apk-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
