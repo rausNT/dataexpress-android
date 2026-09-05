@@ -32,8 +32,11 @@ jobs:
 
       - name: Install Android API 36
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" /usr/local/lib/android/sdk -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          echo "sdkmanager=$SDKMANAGER"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build APKs
         working-directory: bukvar-android
@@ -45,7 +48,8 @@ jobs:
           RELEASE=bukvar-android/app/build/outputs/apk/release/app-release.apk
           test -s "$DEBUG"
           test -s "$RELEASE"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$DEBUG" | head -n 3
+          AAPT="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" /usr/local/lib/android/sdk -type f -path '*/build-tools/36.0.0/aapt' 2>/dev/null | head -n 1)"
+          "$AAPT" dump badging "$DEBUG" | head -n 3
           sha256sum "$DEBUG" "$RELEASE" | tee apk-sha256.txt
 
       - name: Upload APKs
