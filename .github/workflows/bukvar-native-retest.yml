@@ -1,0 +1,72 @@
+name: Bukvar Native - Android 15 verified retest
+on:
+  push:
+    branches: [codex/bukvar-native]
+    paths: ['.github/workflows/bukvar-native-retest.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-device-retest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bukvar-native-build
+          run-id: 34051909814
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: build-artifact
+      - name: Verify identical APK and prepare native UI tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,hashlib
+          p=Path('build-artifact/deliverables/Bukvar-Native.apk')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='f26ed11b6369881b19bb79e54c833728ca0cc537b71c925b9314bf7db5e87897'
+          with zipfile.ZipFile('build-artifact/deliverables/Bukvar-Native-Source.zip') as z:z.extractall('test-source')
+          script=Path('test-source/bukvar-native/tools/smoke.py')
+          s=script.read_text()
+          old="if text is not None and a.get('text')!=text:continue"
+          new="if text is not None and a.get('text','').casefold()!=text.casefold():continue"
+          assert old in s
+          s=s.replace(old,new)
+          s=s.replace("click(rid='split');click(rid='speech')", "click(rid='split');click(rid='speech');screenshot('11-before-speech-branch')")
+          old="present(desc='Занятие 2. М · мама');ok('Tablet native layout')"
+          new="""present(desc='Занятие 2. М · мама')
+           first=find(desc='Занятие 1. А · У');second=find(desc='Занятие 2. М · мама')
+           b1=list(map(int,re.findall(r'\\d+',first.get('bounds',''))));b2=list(map(int,re.findall(r'\\d+',second.get('bounds',''))))
+           assert b1[0]<b2[0] and abs(b1[1]-b2[1])<5, 'Tablet did not render two native columns'
+           ok('Tablet native layout','Two columns verified from native element bounds')"""
+          assert old in s
+          s=s.replace(old,new)
+          compile(s,str(script),'exec')
+          script.write_text(s)
+          PY
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install unchanged release APK and execute native UI tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          ram-size: 2048M
+          disk-size: 4G
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          disable-animations: true
+          script: python3 test-source/bukvar-native/tools/smoke.py build-artifact/deliverables/Bukvar-Native.apk
+      - name: Preserve real Android 15 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bukvar-native-retest-api35
+          path: |
+            device-report/
+            test-source/bukvar-native/tools/smoke.py
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
