@@ -1,0 +1,17 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'ru.ratunov.bukvar.nativeapp'
+ compileSdk 35
+ defaultConfig {
+  applicationId 'ru.ratunov.bukvar.nativeapp'
+  minSdk 23
+  targetSdk 35
+  versionCode 100
+  versionName '1.0.0-native'
+ }
+ signingConfigs { debug { enableV1Signing true; enableV2Signing true } }
+ buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+ lint { abortOnError true; disable 'HardcodedText', 'SetTextI18n', 'ContentDescription', 'ObsoleteSdkInt', 'NewApi' }
+}
+dependencies { testImplementation 'junit:junit:4.13.2' }
