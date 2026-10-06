@@ -93,13 +93,13 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         build_file,
         'versionName "11.1"',
-        'versionName "0.1.5-preview.1-winlator-11.1"',
+        'versionName "0.1.5-preview.2-winlator-11.1"',
         "Android version name patch",
     )
     replace_once(
         build_file,
         "versionCode 28",
-        "versionCode 31",
+        "versionCode 32",
         "Android version code patch",
     )
     replace_once(
@@ -176,8 +176,13 @@ def patch_android_application(root: Path) -> None:
         '''            case "dataexpress.exe":
                 return (WindowWorkaround) (window) -> {
                     final WinHandler winHandler = activity.getWinHandler();
-                    AppUtils.runDelayed(() ->
-                        winHandler.showWindow(window.getHandle(), WinEnums.SW_MAXIMIZE), 500);
+                    AppUtils.runDelayed(() -> {
+                        // Menus and object pickers share the executable class.
+                        // Only an unowned, decorated application window may be maximized.
+                        if (DataExpressWindowPolicy.shouldMaximize(window)) {
+                            winHandler.showWindow(window.getHandle(), WinEnums.SW_MAXIMIZE);
+                        }
+                    }, 500);
                 };
             case "chronocross_launcher.exe":
                 return (WindowWorkaround) (window) -> {''',
@@ -220,6 +225,7 @@ def patch_android_application(root: Path) -> None:
         "    private boolean dataExpressWindowSeen;\n"
         "    private boolean dataExpressSessionFinishing;\n"
         "    private boolean dataExpressWindowWatchdogOffered;\n"
+        "    private android.app.AlertDialog dataExpressStartupDialog;\n"
         "    private int dataExpressMappedWindowCount;",
         "DataExpress window lifecycle fields",
     )
@@ -275,6 +281,7 @@ def patch_android_application(root: Path) -> None:
                 if (!isGenerateWineprefix()) {
                     DataExpressDiagnostics.record(this, "xserver.wine-files.start", null, null);
                     setupWineSystemFiles();
+                    if (isDataExpressMode()) DataExpressStartupServices.configure(this, container);
                     DataExpressDiagnostics.record(this, "xserver.graphics.start", graphicsDriver[0]+","+graphicsDriver[1], null);
                     extractGraphicsDriverFiles();
                     DataExpressDiagnostics.record(this, "xserver.audio.start", audioDriver, null);
@@ -311,12 +318,23 @@ def patch_android_application(root: Path) -> None:
                     if (dataExpressMappedWindowCount < 12) {
                         DataExpressDiagnostics.record(XServerDisplayActivity.this, "x11.window.map",
                             "class=" + window.getClassName()
-                                + "; index=" + dataExpressMappedWindowCount,
+                                + "; index=" + dataExpressMappedWindowCount
+                                + "; size=" + window.getWidth() + "x" + window.getHeight()
+                                + "; type=" + window.getType()
+                                + "; owner=" + window.getTransientFor()
+                                + "; overrideRedirect=" + window.attributes.isOverrideRedirect()
+                                + "; application=" + window.isApplicationWindow(),
                             null);
                     }
                     dataExpressMappedWindowCount++;
                     if (isDataExpressWindow(window)) {
                         dataExpressWindowSeen = true;
+                        runOnUiThread(() -> {
+                            if (dataExpressStartupDialog != null) {
+                                dataExpressStartupDialog.dismiss();
+                                dataExpressStartupDialog = null;
+                            }
+                        });
                         DataExpressDiagnostics.record(XServerDisplayActivity.this, "dataexpress.window.ready",
                             "mappedWindows=" + dataExpressMappedWindowCount, null);
                     }
@@ -353,7 +371,7 @@ def patch_android_application(root: Path) -> None:
         if (enableLogs) ProcessHelper.addDebugCallback(debugDialog = new DebugDialog(this));
         if (getIntent().getBooleanExtra(\"dataexpress_mode\", false)) {
             DataExpressProcessTrace.reset();
-            ProcessHelper.addDebugCallback(DataExpressProcessTrace::onLine);
+            ProcessHelper.addDebugCallback(line -> DataExpressProcessTrace.onLine(this, line));
         }""",
         "DataExpress Wine output capture patch",
     )
@@ -363,9 +381,10 @@ def patch_android_application(root: Path) -> None:
         '''        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");''',
         '''        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");
         if (getIntent().getBooleanExtra("dataexpress_mode", false)) {
-            envVars.put("WINEDEBUG", "+seh,+module,+process");
+            // Keep errors by default; detailed tracing is an explicit diagnostic option.
+            if (!enableWineDebug) envVars.put("WINEDEBUG", "-all,err+all");
             DataExpressDiagnostics.record(this, "wine.debug.enabled",
-                "channels=seh,module,process", null);
+                "channels=" + envVars.get("WINEDEBUG"), null);
         }''',
         "DataExpress selective Wine diagnostics",
     )
@@ -444,22 +463,28 @@ def patch_android_application(root: Path) -> None:
     private void scheduleDataExpressWindowWatchdog() {
         if (!isDataExpressMode()) return;
         runOnUiThread(() -> xServerView.postDelayed(() -> {
+            if (dataExpressSessionFinishing || dataExpressWindowSeen || isFinishing()) return;
+            android.widget.Toast.makeText(this,
+                \"DataExpress запускается. Подготовка Wine может занять больше минуты.\",
+                android.widget.Toast.LENGTH_LONG).show();
+        }, 20000));
+        runOnUiThread(() -> xServerView.postDelayed(() -> {
             if (dataExpressSessionFinishing || dataExpressWindowSeen
                 || dataExpressWindowWatchdogOffered || isFinishing()) return;
             dataExpressWindowWatchdogOffered = true;
             boolean compatibilityMode = getIntent().getBooleanExtra(
                 \"dataexpress_compatibility_mode\", false);
             DataExpressDiagnostics.record(this, \"dataexpress.window.timeout\",
-                \"afterMs=20000; compatibility=\" + compatibilityMode
+                \"afterMs=120000; compatibility=\" + compatibilityMode
                     + \"; mappedWindows=\" + dataExpressMappedWindowCount,
                 null);
             DataExpressProcessTrace.snapshot(this, \"window-timeout\");
             DataExpressDiagnostics.flush(this);
             android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
-                .setTitle(\"Окно DataExpress не появилось\")
+                .setTitle(\"DataExpress ещё запускается\")
                 .setMessage(compatibilityMode
-                    ? \"Совместимый режим также не показал окно. Можно продолжить ожидание или вернуться на стартовый экран и отправить журнал.\"
-                    : \"Wine запущен, но окно DataExpress не появилось за 20 секунд. Повторить запуск без esync и с разрешением 1280×800?\")
+                    ? \"Окно пока не появилось за 2 минуты. Можно продолжить ожидание или вернуться на стартовый экран и отправить журнал.\"
+                    : \"Окно пока не появилось за 2 минуты. Можно продолжить ожидание или повторить запуск без esync и с разрешением 1280×800.\")
                 .setNegativeButton(\"Продолжить ожидание\", null);
             if (compatibilityMode) {
                 dialog.setPositiveButton(\"На стартовый экран\", (value, which) ->
@@ -470,8 +495,8 @@ def patch_android_application(root: Path) -> None:
                 dialog.setPositiveButton(\"Повторить совместимо\", (value, which) ->
                     retryDataExpressCompatibility());
             }
-            dialog.show();
-        }, 20000));
+            dataExpressStartupDialog = dialog.show();
+        }, 120000));
     }
 
     private synchronized void retryDataExpressCompatibility() {
@@ -487,6 +512,7 @@ def patch_android_application(root: Path) -> None:
         DataExpressDiagnostics.flush(this);
         winHandler.stop();
         if (environment != null) environment.stopEnvironmentComponents();
+        DataExpressBootstrap.stopWineProcesses(this);
         runOnUiThread(this::recreate);
     }
 
@@ -507,7 +533,7 @@ def patch_android_application(root: Path) -> None:
     replace_once(
         launcher,
         "import com.winlator.box64.Box64Preset;",
-        "import com.winlator.DataExpressRuntimePaths;\nimport com.winlator.box64.Box64Preset;",
+        "import com.winlator.DataExpressRuntimePaths;\nimport com.winlator.DataExpressDiagnostics;\nimport com.winlator.box64.Box64Preset;",
         "runtime path patcher import",
     )
     replace_once(
@@ -515,6 +541,17 @@ def patch_android_application(root: Path) -> None:
         "            extractBox64File();\n            copyDefaultBox64RCFile();",
         "            extractBox64File();\n            DataExpressRuntimePaths.patchRuntime(environment.getContext(), environment.getRootFS());\n            copyDefaultBox64RCFile();",
         "Box64 interpreter path patch",
+    )
+    replace_once(
+        launcher,
+        "            pid = execGuestProgram();",
+        """            long startedAt = android.os.SystemClock.elapsedRealtime();
+            DataExpressDiagnostics.record(environment.getContext(), "box64.spawn.start", null, null);
+            pid = execGuestProgram();
+            DataExpressDiagnostics.record(environment.getContext(), "box64.spawn.ready",
+                "pid=" + pid + "; elapsedMs="
+                    + (android.os.SystemClock.elapsedRealtime() - startedAt), null);""",
+        "Box64 process spawn timing",
     )
     replace_once(
         launcher,

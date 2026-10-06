@@ -289,6 +289,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
                     "import com.winlator.box64.Box64Preset;\n"
                     "            extractBox64File();\n"
                     "            copyDefaultBox64RCFile();\n"
+                    "            pid = execGuestProgram();\n"
                     '        String command = rootDir+"/usr/local/bin/box64 "+guestExecutable;\n'
                 ),
                 "app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java": """import com.winlator.MainActivity;
@@ -323,8 +324,8 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             MODULE.patch_android_application(root)
 
             self.assertIn("com.dataexpr", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("versionCode 31", (root / "app/build.gradle").read_text(encoding="utf-8"))
-            self.assertIn("0.1.5-preview.1-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("versionCode 32", (root / "app/build.gradle").read_text(encoding="utf-8"))
+            self.assertIn("0.1.5-preview.2-winlator-11.1", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("zstd-jni:1.5.7-12", (root / "app/build.gradle").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8"))
             self.assertIn("DataExpress Android", (root / "app/src/main/res/values-ru/strings.xml").read_text(encoding="utf-8"))
@@ -339,9 +340,13 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn("DataExpressBootstrap.finishAndSync(this);", xserver)
             self.assertIn('getStringExtra("exec_args")', xserver)
             self.assertIn('"xserver.setup.failure"', xserver)
-            self.assertIn("DataExpressProcessTrace::onLine", xserver)
+            self.assertIn("DataExpressStartupServices.configure(this, container)", xserver)
+            self.assertIn("DataExpressProcessTrace.onLine(this, line)", xserver)
             self.assertIn("DataExpressProcessTrace.finish(this, status)", xserver)
-            self.assertIn('envVars.put("WINEDEBUG", "+seh,+module,+process")', xserver)
+            self.assertIn('if (!enableWineDebug) envVars.put("WINEDEBUG", "-all,err+all")', xserver)
+            self.assertNotIn('envVars.put("WINEDEBUG", "+seh,+module,+process")', xserver)
+            self.assertIn('"afterMs=120000; compatibility="', xserver)
+            self.assertIn('dataExpressStartupDialog.dismiss()', xserver)
             self.assertIn('DataExpressProcessTrace.snapshot(this, "window-timeout")', xserver)
             self.assertIn("DataExpressBootstrap.stopWineProcesses(this)", xserver)
             self.assertIn('envVars.put("FIREBIRD_LOCK", "C:\\\\DataExpress\\\\fb5\\\\lock")', xserver)
@@ -355,6 +360,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('"x11.window.map"', xserver)
             launcher = (root / "app/src/main/java/com/winlator/xenvironment/components/GuestProgramLauncherComponent.java").read_text(encoding="utf-8")
             self.assertIn("DataExpressRuntimePaths.patchRuntime", launcher)
+            self.assertIn('"box64.spawn.ready"', launcher)
             self.assertIn('nativeLibraryDir, "libbox64.so"', launcher)
             self.assertIn("packagedBox64.canExecute()", launcher)
             app_utils = (root / "app/src/main/java/com/winlator/core/AppUtils.java").read_text(encoding="utf-8")
@@ -363,6 +369,7 @@ class PatchWinlatorSourceTest(unittest.TestCase):
             self.assertIn('case "dataexpress.exe":', workarounds)
             self.assertIn("WinEnums.SW_MAXIMIZE", workarounds)
             self.assertIn("winHandler.showWindow(window.getHandle()", workarounds)
+            self.assertIn("DataExpressWindowPolicy.shouldMaximize(window)", workarounds)
             process_helper = (root / "app/src/main/java/com/winlator/core/ProcessHelper.java").read_text(encoding="utf-8")
             self.assertIn("ProcessHelper.exec failed", process_helper)
             manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")

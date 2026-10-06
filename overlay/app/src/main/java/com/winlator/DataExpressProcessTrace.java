@@ -13,6 +13,8 @@ public final class DataExpressProcessTrace {
     private static final Deque<String> LINES = new ArrayDeque<>();
     private static final Deque<String> SIGNAL_LINES = new ArrayDeque<>();
     private static String command = "";
+    private static boolean firstOutputSeen;
+    private static long commandStartedAt;
 
     private DataExpressProcessTrace() {}
 
@@ -20,10 +22,13 @@ public final class DataExpressProcessTrace {
         LINES.clear();
         SIGNAL_LINES.clear();
         command = "";
+        firstOutputSeen = false;
+        commandStartedAt = 0;
     }
 
     public static synchronized void command(Context context, String value) {
         command = value == null ? "" : value;
+        commandStartedAt = android.os.SystemClock.elapsedRealtime();
         DataExpressDiagnostics.record(context, "wine.command", command, null);
     }
 
@@ -53,6 +58,15 @@ public final class DataExpressProcessTrace {
             while (SIGNAL_LINES.size() >= MAX_SIGNAL_LINES) SIGNAL_LINES.removeFirst();
             SIGNAL_LINES.addLast(line);
         }
+    }
+
+    public static synchronized void onLine(Context context, String value) {
+        if (value != null && !firstOutputSeen) {
+            firstOutputSeen = true;
+            DataExpressDiagnostics.record(context, "wine.output.first",
+                "elapsedMs=" + (android.os.SystemClock.elapsedRealtime() - commandStartedAt), null);
+        }
+        onLine(value);
     }
 
     public static synchronized void snapshot(Context context, String reason) {
