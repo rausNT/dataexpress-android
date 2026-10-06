@@ -1,0 +1,9 @@
+winlator6/.gradle/
+winlator6/.cxx/
+winlator6/app/build/
+winlator6/local.properties
+winlator6/app/src/main/assets/imagefs.tzst
+*.dll
+*.apk
+demo-runtime/*
+!demo-runtime/start-tv.sh

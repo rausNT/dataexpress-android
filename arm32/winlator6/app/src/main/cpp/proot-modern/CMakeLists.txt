@@ -1,0 +1,71 @@
+cmake_minimum_required(VERSION 3.22)
+include_directories(src ../proot/talloc)
+add_executable(libproot.so src/cli/cli.c
+src/cli/proot.c
+src/cli/note.c
+src/execve/enter.c
+src/execve/exit.c
+src/execve/shebang.c
+src/execve/elf.c
+src/execve/ldso.c
+src/execve/auxv.c
+src/execve/aoxp.c
+src/path/binding.c
+src/path/glue.c
+src/path/canon.c
+src/path/f2fs-bug.c
+src/path/path.c
+src/path/proc.c
+src/path/temp.c
+src/syscall/seccomp.c
+src/syscall/syscall.c
+src/syscall/chain.c
+src/syscall/enter.c
+src/syscall/exit.c
+src/syscall/sysnum.c
+src/syscall/socket.c
+src/syscall/heap.c
+src/syscall/rlimit.c
+src/syscall/pipe_shadow.c
+src/tracee/tracee.c
+src/tracee/mem.c
+src/tracee/reg.c
+src/tracee/event.c
+src/tracee/seccomp.c
+src/tracee/statx.c
+src/ptrace/ptrace.c
+src/ptrace/user.c
+src/ptrace/wait.c
+src/extension/extension.c
+src/extension/ashmem_memfd/ashmem_memfd.c
+src/extension/kompat/kompat.c
+src/extension/fake_id0/chown.c
+src/extension/fake_id0/chroot.c
+src/extension/fake_id0/getsockopt.c
+src/extension/fake_id0/sendmsg.c
+src/extension/fake_id0/socket.c
+src/extension/fake_id0/open.c
+src/extension/fake_id0/unlink.c
+src/extension/fake_id0/rename.c
+src/extension/fake_id0/chmod.c
+src/extension/fake_id0/utimensat.c
+src/extension/fake_id0/access.c
+src/extension/fake_id0/exec.c
+src/extension/fake_id0/link.c
+src/extension/fake_id0/symlink.c
+src/extension/fake_id0/mk.c
+src/extension/fake_id0/stat.c
+src/extension/fake_id0/helper_functions.c
+src/extension/fake_id0/fake_id0.c
+src/extension/hidden_files/hidden_files.c
+src/extension/mountinfo/mountinfo.c
+src/extension/port_switch/port_switch.c
+src/extension/sysvipc/sysvipc.c
+src/extension/sysvipc/sysvipc_msg.c
+src/extension/sysvipc/sysvipc_sem.c
+src/extension/sysvipc/sysvipc_shm.c
+src/extension/link2symlink/link2symlink.c
+src/extension/fix_symlink_size/fix_symlink_size.c)
+target_compile_definitions(libproot.so PRIVATE _FILE_OFFSET_BITS=64 _GNU_SOURCE PROOT_UNBUNDLE_LOADER="/")
+target_compile_options(libproot.so PRIVATE -O2 -Wno-error=implicit-function-declaration)
+target_link_libraries(libproot.so talloc)

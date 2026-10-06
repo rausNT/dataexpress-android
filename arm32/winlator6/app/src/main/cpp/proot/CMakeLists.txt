@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22)
+project(TVLoader C)
+add_library(talloc STATIC talloc/talloc.c)
+include_directories(src talloc)
+add_library(proot-loader SHARED src/loader/loader.c)
+target_compile_options(proot-loader PRIVATE -O2 -fno-stack-protector -fno-builtin)
+set_target_properties(proot-loader PROPERTIES LINK_FLAGS "-nostdlib -Wl,--as-needed,-e,_start")
